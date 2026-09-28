@@ -1,0 +1,26 @@
+name: Build and validate
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        shell: [powershell, pwsh]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate package
+        shell: ${{ matrix.shell }}
+        run: ./build.ps1 test
+      - name: Build distribution
+        shell: ${{ matrix.shell }}
+        run: ./build.ps1 package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ToProxmox-${{ matrix.shell }}
+          path: dist/ToProxmox.ps1
+          if-no-files-found: error

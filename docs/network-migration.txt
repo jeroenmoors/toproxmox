@@ -1,0 +1,73 @@
+WINDOWS NETWORK MIGRATION - GRAPHICAL INTERFACE
+
+Run inside the Windows VM using Windows PowerShell 5.1 and Desktop Experience.
+This GUI does not run on Linux or Windows Server Core. A Linux management
+computer can still access the Proxmox console. No additional PowerShell modules
+are required beyond the Windows modules NetTCPIP, DnsClient, NetAdapter and PnpDevice.
+
+GETTING STARTED
+1. Download the standalone ToProxmox.ps1 package to a local directory.
+2. Run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\ToProxmox.ps1
+3. Accept the Windows prompt for administrator privileges.
+From a source checkout, use .\src\ToProxmox.ps1 instead. See README.md for build
+instructions. The package automatically extracts and cleans up its runtime files.
+
+BEFORE MIGRATION (ON VMWARE)
+- On the '1. Before migration' tab, review the detected adapters.
+- Click 'Save configuration...' and choose a new JSON file.
+- Keep a copy of this export outside the VM as well.
+
+AFTER MIGRATION (THROUGH THE PROXMOX CONSOLE)
+- Verify that the new NIC driver is installed and the VLAN/bridge is correct.
+- On the '2. After migration' tab, open the original JSON file.
+- Select the old adapter from the export and the correct new adapter. When there
+  are multiple adapters, the first is not selected automatically; check MAC and VLAN.
+- Optionally select 'Remove absent old adapter'.
+- Click '1. Dry run (no changes)'. This does not change network or device settings.
+- After a successful dry run, '2. Restore configuration' becomes available.
+- Review the summary and confirm the restore. Repeat for each adapter.
+- Check IP, gateway, DNS, network profile and applications, including after a reboot.
+
+LOGS AND BACKUP
+The GUI remains responsive during execution. The script runs in a separate
+process; export, dry run and restore operations cannot run at the same time.
+Logs are stored under C:\ProgramData\NetworkMigration\Logs, in a directory per operation.
+You can also save the current log using the button in the window.
+Before restoring, the backend saves the target configuration in a before-restore
+JSON file alongside the original export.
+This backup is not a complete automatic rollback and does not reinstall a removed
+adapter. An error may occur after settings have been partially applied: stay on
+the console and review the log before continuing.
+
+SCOPE AND LIMITATIONS
+- The backend is Migrate-Network.ps1, including the RemoveOldAdapter option.
+- IPv4 addresses, DHCP, default gateways, DNS, DNS suffix, metric and MTU.
+- Additional static routes and manual IPv6 settings block restoration.
+- Only the active routing table is exported; inactive persistent routes may be
+  missing. This is not a complete backup of all routes.
+- NIC teaming, VLAN driver settings, firewall profiles, NRPT/GPO and other
+  advanced adapter settings are not migrated.
+- A DHCP adapter remains on DHCP; receiving the same lease is not guaranteed.
+- Old NIC removal uses only the exact saved PnP device ID and requires the device
+  to be physically absent. Drivers are not removed.
+- Removal requires pnputil /remove-device (Server 2022/2025, Windows 10 2004+
+  and Windows 11). Older versions stop before any changes are made.
+- Older exports without PnpInstanceId work without the removal option. Do not
+  replace the original export with a new export made after migration.
+- Do not run the source and target VMs on the production network simultaneously.
+
+TECHNICAL DETAILS
+The launcher uses ExecutionPolicy Bypass only for the processes it starts; it
+neither changes the permanent execution policy nor bypasses enforced GPO settings.
+Handle organizational policies that block scripts through your normal
+administrative procedures. The UI and backend are readable PowerShell source code.
+
+VALIDATION
+Static syntax and package checks are available through .\build.ps1 test.
+No Windows/WinForms environment was available for an actual UI or network test.
+Test on a non-production VM first.
+
+UI 1.1 - LAYOUT FIX
+Text and button rows automatically receive the height they need. The DPI baseline
+is explicitly set to 96 DPI. This fixes the previous fixed row height, which
+clipped the second line above the tabs. Migration logic is unchanged.
