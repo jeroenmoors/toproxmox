@@ -16,7 +16,11 @@ jobs:
       - name: Validate package
         shell: ${{ matrix.shell }}
         run: ./build.ps1 test
-      - name: Build distribution
+      - uses: actions/cache@v4
+        with:
+          path: .cache/virtio-win
+          key: virtio-${{ hashFiles('src/Drivers/virtio-win.json') }}
+      - name: Build distribution with VirtIO drivers
         shell: ${{ matrix.shell }}
         run: ./build.ps1 package
       - uses: actions/upload-artifact@v4

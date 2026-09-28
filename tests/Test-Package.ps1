@@ -13,7 +13,7 @@ try {
             if ($parseErrors.Count -gt 0) { throw "Syntax error in $($file.FullName): $($parseErrors -join '; ')" }
         }
     }
-    $package = & (Join-Path $root 'build.ps1') package -OutputDirectory (Join-Path $temp 'directory with spaces')
+    $package = & (Join-Path $root 'build.ps1') package -SkipDrivers -OutputDirectory (Join-Path $temp 'directory with spaces')
     $tokens = $null; $parseErrors = $null
     $ast = [Management.Automation.Language.Parser]::ParseFile($package.FullName, [ref]$tokens, [ref]$parseErrors)
     if ($parseErrors.Count -gt 0) { throw 'The package contains syntax errors.' }
@@ -23,15 +23,32 @@ try {
         $node.Left -is [Management.Automation.Language.VariableExpressionAst] -and
         $node.Left.VariablePath.UserPath -eq 'embeddedPayload'
     }, $true)
+    $driverAssignment = $ast.Find({
+        param($node)
+        $node -is [Management.Automation.Language.AssignmentStatementAst] -and
+        $node.Left -is [Management.Automation.Language.VariableExpressionAst] -and
+        $node.Left.VariablePath.UserPath -eq 'embeddedDriver'
+    }, $true)
+    if ($driverAssignment.Right.Expression.Value) { throw 'SkipDrivers still embedded an installer.' }
     $encoded = $assignment.Right.Expression.Value
     $payload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($encoded)) | ConvertFrom-Json
-    if (@($payload.PSObject.Properties).Count -ne 2) { throw 'Unexpected package contents.' }
-    foreach ($name in @('Migrate-Network.ps1', 'Network-Migration-UI.ps1')) {
-        $expected = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $root "src/Network/$name")))
+    if (@($payload.PSObject.Properties).Count -ne 8) { throw 'Unexpected package contents.' }
+    $expectedFiles = @{
+        'Migrate-Network.ps1' = 'src/Network/Migrate-Network.ps1'
+        'Network-Migration-UI.ps1' = 'src/Network/Network-Migration-UI.ps1'
+        'Install-VirtioDrivers.ps1' = 'src/Drivers/Install-VirtioDrivers.ps1'
+        'VirtioDriverTools.ps1' = 'src/Drivers/VirtioDriverTools.ps1'
+        'Prepare-VirtioBoot.ps1' = 'src/Drivers/Prepare-VirtioBoot.ps1'
+        'VirtioBootTools.ps1' = 'src/Drivers/VirtioBootTools.ps1'
+        'virtio-win.json' = 'src/Drivers/virtio-win.json'
+        'THIRD-PARTY.md' = 'docs/THIRD-PARTY.md'
+    }
+    foreach ($name in $expectedFiles.Keys) {
+        $expected = [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $root $expectedFiles[$name])))
         if ($payload.$name -cne $expected) { throw "Embedded file does not match: $name" }
     }
     $hash = (Get-FileHash -LiteralPath $package.FullName -Algorithm SHA256).Hash
-    $second = & (Join-Path $root 'build.ps1') package -OutputDirectory (Join-Path $temp 'second')
+    $second = & (Join-Path $root 'build.ps1') package -SkipDrivers -OutputDirectory (Join-Path $temp 'second')
     if ((Get-FileHash -LiteralPath $second.FullName -Algorithm SHA256).Hash -ne $hash) {
         throw 'Repeated builds produce different packages.'
     }

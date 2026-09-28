@@ -3,6 +3,7 @@
 param()
 $ErrorActionPreference = 'Stop'
 $embeddedPayload = '' # PACKAGE_PAYLOAD
+$embeddedDriver = '' # DRIVER_PAYLOAD
 
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
     throw 'ToProxmox requires Windows with Desktop Experience and Windows PowerShell 5.1.'
@@ -36,8 +37,15 @@ try {
         $payload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($embeddedPayload)) | ConvertFrom-Json
         $runtimeDirectory = Join-Path ([IO.Path]::GetTempPath()) ('ToProxmox-' + [guid]::NewGuid().ToString('N'))
         [void][IO.Directory]::CreateDirectory($runtimeDirectory)
-        foreach ($name in @('Migrate-Network.ps1', 'Network-Migration-UI.ps1')) {
+        $allowedNames = @('Migrate-Network.ps1', 'Network-Migration-UI.ps1', 'Install-VirtioDrivers.ps1',
+            'VirtioDriverTools.ps1', 'Prepare-VirtioBoot.ps1', 'VirtioBootTools.ps1', 'virtio-win.json', 'THIRD-PARTY.md')
+        foreach ($property in $payload.PSObject.Properties) {
+            $name = $property.Name
+            if ($name -cnotin $allowedNames) { throw "Unexpected package entry: $name" }
             [IO.File]::WriteAllBytes((Join-Path $runtimeDirectory $name), [Convert]::FromBase64String($payload.$name))
+        }
+        if ($embeddedDriver) {
+            [IO.File]::WriteAllBytes((Join-Path $runtimeDirectory 'virtio-win-guest-tools.exe'), [Convert]::FromBase64String($embeddedDriver))
         }
         $uiPath = Join-Path $runtimeDirectory 'Network-Migration-UI.ps1'
     } else {

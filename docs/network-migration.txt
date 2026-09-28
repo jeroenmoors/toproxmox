@@ -16,9 +16,12 @@ BEFORE MIGRATION (ON VMWARE)
 - On the '1. Before migration' tab, review the detected adapters.
 - Click 'Save configuration...' and choose a new JSON file.
 - Keep a copy of this export outside the VM as well.
+- Install VirtIO drivers, complete any required restart, then use Boot preparation
+  for the selected storage controller before shutting down (see boot-preparation.md).
 
 AFTER MIGRATION (THROUGH THE PROXMOX CONSOLE)
-- Verify that the new NIC driver is installed and the VLAN/bridge is correct.
+- Use the VirtIO drivers tab to install the new NIC driver if needed (see drivers.md).
+- Restart if setup requests it, and verify that the VLAN/bridge is correct.
 - On the '2. After migration' tab, open the original JSON file.
 - Select the old adapter from the export and the correct new adapter. When there
   are multiple adapters, the first is not selected automatically; check MAC and VLAN.

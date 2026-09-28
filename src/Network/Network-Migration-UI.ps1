@@ -36,9 +36,25 @@ if (-not (Test-Path -LiteralPath $enginePath -PathType Leaf)) {
     exit 1
 }
 
+# Packaged files are siblings; source checkouts keep drivers in src/Drivers.
+$driverRoot = $PSScriptRoot
+if (-not (Test-Path -LiteralPath (Join-Path $driverRoot 'Install-VirtioDrivers.ps1'))) {
+    $driverRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'Drivers'
+}
+$driverManifestPath = Join-Path $driverRoot 'virtio-win.json'
+$driverManifest = Get-Content -LiteralPath $driverManifestPath -Raw | ConvertFrom-Json
+$driverInstallerPath = Join-Path $PSScriptRoot 'virtio-win-guest-tools.exe'
+if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'Install-VirtioDrivers.ps1'))) {
+    $repositoryRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+    $driverInstallerPath = Join-Path $repositoryRoot ('.cache/virtio-win/' + $driverManifest.Version + '/virtio-win-guest-tools.exe')
+}
 $script:Ui = @{
     Busy = $false; Job = $null; ExportPath = ''; ExportHash = ''; Saved = $null
     PreviewKey = ''; LogDirectory = ''; Engine = $enginePath; PowerShell = $nativePs
+    DriverEngine = (Join-Path $driverRoot 'Install-VirtioDrivers.ps1')
+    DriverInstaller = $driverInstallerPath; DriverManifest = $driverManifestPath
+    RebootRequired = $false; BootCheckedService = ''
+    BootEngine = (Join-Path $driverRoot 'Prepare-VirtioBoot.ps1')
 }
 
 function New-Label([string]$Text) {
@@ -72,12 +88,17 @@ function Update-Buttons {
     $tabs.Enabled = -not $busy
     $closeButton.Enabled = -not $busy
     $saveLogButton.Enabled = -not $busy -and $logText.TextLength -gt 0
-    $previewButton.Enabled = -not $busy -and $null -ne $sourceCombo.SelectedItem -and $null -ne $targetCombo.SelectedItem
+    $previewButton.Enabled = -not $busy -and -not $script:Ui.RebootRequired -and $null -ne $sourceCombo.SelectedItem -and $null -ne $targetCombo.SelectedItem
     $restoreButton.Enabled = $previewButton.Enabled -and -not [string]::IsNullOrWhiteSpace($script:Ui.PreviewKey)
+    $checkBootButton.Enabled = -not $busy
+    $prepareBootButton.Enabled = -not $busy -and -not $script:Ui.RebootRequired -and
+        $script:Ui.BootCheckedService -eq $bootServiceCombo.SelectedItem.Service
+    $installDriversButton.Enabled = -not $busy -and -not $script:Ui.RebootRequired -and
+        (Test-Path -LiteralPath $script:Ui.DriverInstaller -PathType Leaf)
 }
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'ToProxmox | Network migration'
+$form.Text = 'ToProxmox | Windows migration'
 $form.StartPosition = 'CenterScreen'
 $form.ClientSize = New-Object System.Drawing.Size(980, 730)
 $form.MinimumSize = New-Object System.Drawing.Size(860, 680)
@@ -101,7 +122,7 @@ $root.AutoScroll = $true
 [void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
 [void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
 $form.Controls.Add($root)
-$title = New-Label 'Migrate Windows network settings'
+$title = New-Label 'Prepare Windows for Proxmox'
 $title.Font = New-Object System.Drawing.Font('Segoe UI', 18, [Drawing.FontStyle]::Bold)
 $root.Controls.Add($title, 0, 0)
 $intro = New-Label "Computer: $env:COMPUTERNAME  |  Administrator`r`nRestore using the Proxmox console. Network connectivity will be temporarily interrupted."
@@ -111,7 +132,9 @@ $tabs = New-Object System.Windows.Forms.TabControl
 $tabs.Dock = 'Fill'
 $exportTab = New-Object System.Windows.Forms.TabPage('1. Before migration')
 $restoreTab = New-Object System.Windows.Forms.TabPage('2. After migration')
-$tabs.TabPages.AddRange(@($exportTab, $restoreTab))
+$driversTab = New-Object System.Windows.Forms.TabPage('3. VirtIO drivers')
+$bootTab = New-Object System.Windows.Forms.TabPage('Boot preparation')
+$tabs.TabPages.AddRange(@($exportTab, $restoreTab, $driversTab, $bootTab))
 $root.Controls.Add($tabs, 0, 2)
 
 $exportLayout = New-Object System.Windows.Forms.TableLayoutPanel
@@ -173,6 +196,49 @@ $restoreButton = New-Button '2. Restore configuration' 240
 $previewButton.Enabled = $false; $restoreButton.Enabled = $false
 $restoreActions.Controls.AddRange(@($previewButton, $restoreButton))
 $restoreLayout.Controls.Add($restoreActions, 0, 5); $restoreLayout.SetColumnSpan($restoreActions, 3)
+
+$driversLayout = New-Object System.Windows.Forms.TableLayoutPanel
+$driversLayout.Dock = 'Fill'; $driversLayout.Padding = New-Object System.Windows.Forms.Padding(10)
+$driversLayout.ColumnCount = 1; $driversLayout.RowCount = 5; $driversLayout.AutoScroll = $true
+[void]$driversLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Percent', 100)))
+for ($row = 0; $row -lt 5; $row++) { [void]$driversLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize'))) }
+$driversTab.Controls.Add($driversLayout)
+$driversLayout.Controls.Add((New-Label 'Install VirtIO drivers and guest agents for Proxmox. Export your network settings first. You can open setup before migration or after booting the migrated VM.'), 0, 0)
+$driversLayout.Controls.Add((New-Label 'Use the VM console: driver installation may interrupt networking. Complete the upstream installer window and restart Windows if requested.'), 0, 1)
+$driversLayout.Controls.Add((New-Label 'After installation and any required restart, open Boot preparation to check the storage driver before shutting down for migration.'), 0, 2)
+$driverStatusLabel = New-Label ''
+if (Test-Path -LiteralPath $script:Ui.DriverInstaller -PathType Leaf) {
+    $driverStatusLabel.Text = "VirtIO Guest Tools $($driverManifest.Version) available. No installer download is needed on this VM."
+} else {
+    $driverStatusLabel.Text = 'Driver installer not included. Build or download a package with drivers using: .\build.ps1 package'
+}
+$driversLayout.Controls.Add($driverStatusLabel, 0, 3)
+$installDriversButton = New-Button 'Install VirtIO drivers...' 240
+$driversLayout.Controls.Add($installDriversButton, 0, 4)
+
+$bootLayout = New-Object System.Windows.Forms.TableLayoutPanel
+$bootLayout.Dock = 'Fill'; $bootLayout.Padding = New-Object System.Windows.Forms.Padding(10)
+$bootLayout.ColumnCount = 1; $bootLayout.RowCount = 5; $bootLayout.AutoScroll = $true
+[void]$bootLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Percent', 100)))
+for ($row = 0; $row -lt 5; $row++) { [void]$bootLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize'))) }
+$bootTab.Controls.Add($bootLayout)
+$bootLayout.Controls.Add((New-Label 'Before migration: install the drivers, complete any required restart, then choose the controller that will host the Windows boot disk in Proxmox.'), 0, 0)
+$bootLayout.Controls.Add((New-Label 'Preparation checks the installed storage driver, saves the original startup values and enables Boot Start. NetKVM keeps its normal network-driver settings. A successful check is not a boot test.'), 0, 1)
+$bootServiceCombo = New-Object System.Windows.Forms.ComboBox
+$bootServiceCombo.Dock = 'Fill'; $bootServiceCombo.DropDownStyle = 'DropDownList'; $bootServiceCombo.DisplayMember = 'Label'
+[void]$bootServiceCombo.Items.Add([PSCustomObject]@{ Label = 'VirtIO SCSI / VirtIO SCSI single (vioscsi)'; Service = 'vioscsi' })
+[void]$bootServiceCombo.Items.Add([PSCustomObject]@{ Label = 'VirtIO Block (viostor)'; Service = 'viostor' })
+$bootServiceCombo.SelectedIndex = 0
+$bootLayout.Controls.Add($bootServiceCombo, 0, 2)
+$bootActions = New-Object System.Windows.Forms.FlowLayoutPanel
+$bootActions.AutoSize = $true; $bootActions.Dock = 'Fill'
+$checkBootButton = New-Button '1. Check boot settings' 220
+$prepareBootButton = New-Button '2. Prepare boot settings...' 250
+$prepareBootButton.Enabled = $false
+$bootActions.Controls.AddRange(@($checkBootButton, $prepareBootButton))
+$bootLayout.Controls.Add($bootActions, 0, 3)
+$bootStatusLabel = New-Label 'Check first. After preparation, shut down for migration. If Windows boots on VMware again, recheck the settings before migrating.'
+$bootLayout.Controls.Add($bootStatusLabel, 0, 4)
 
 $root.Controls.Add((New-Label 'IPv4 + default routes. Additional static routes, manual IPv6 and teaming require separate handling.'), 0, 3)
 $logText = New-ReadOnlyText
@@ -261,10 +327,14 @@ function Start-Operation([string]$Kind, [hashtable]$Parameters, [string]$Selecti
     New-Item -ItemType Directory -Path $opDir -Force | Out-Null
     $transcriptPath = Join-Path $opDir 'operation.log'
     $resultPath = Join-Path $opDir 'result.json'
+    if ($Kind -in @('Drivers', 'Boot check', 'Boot prepare')) { $script:Ui.BootCheckedService = '' }
+    if ($Kind -eq 'Boot prepare') { $Parameters['BackupDirectory'] = $opDir }
+    if ($Kind -eq 'Drivers') { $Parameters['LogPath'] = Join-Path $opDir 'virtio-setup.log' }
     $payload = @{
-        Engine = $script:Ui.Engine; Parameters = $Parameters; Transcript = $transcriptPath
-        Result = $resultPath; ExportHash = $(if ($Kind -eq 'Export') { '' } else { $script:Ui.ExportHash })
-        TargetGuid = $(if ($Kind -eq 'Export') { '' } else { $targetCombo.SelectedItem.Guid })
+        Engine = $(if ($Kind -eq 'Drivers') { $script:Ui.DriverEngine } elseif ($Kind -in @('Boot check', 'Boot prepare')) { $script:Ui.BootEngine } else { $script:Ui.Engine })
+        Kind = $Kind; Parameters = $Parameters; Transcript = $transcriptPath
+        Result = $resultPath; ExportHash = $(if ($Kind -in @('Dry run', 'Restore')) { $script:Ui.ExportHash } else { '' })
+        TargetGuid = $(if ($Kind -in @('Dry run', 'Restore')) { $targetCombo.SelectedItem.Guid } else { '' })
     } | ConvertTo-Json -Depth 8 -Compress
     $payload64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($payload))
     # Only a Base64 data literal is inserted. Paths and adapter names are passed
@@ -272,7 +342,7 @@ function Start-Operation([string]$Kind, [hashtable]$Parameters, [string]$Selecti
     $worker = @'
 $ErrorActionPreference = 'Stop'
 $payload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__PAYLOAD__')) | ConvertFrom-Json
-$result = @{ Success = $false; Message = ''; Finished = '' }
+$result = @{ Success = $false; Message = ''; Finished = ''; RebootRequired = $false; CanPrepare = $false }
 $transcribing = $false
 try {
     Start-Transcript -Path $payload.Transcript -Force | Out-Null
@@ -285,9 +355,17 @@ try {
         $target = @(Get-NetAdapter -Physical | Where-Object { $_.Name -eq $parameters.TargetAlias })
         if ($target.Count -ne 1 -or [string]$target[0].InterfaceGuid -ne $payload.TargetGuid) { throw 'Target adapter changed before execution.' }
     }
-    & $payload.Engine @parameters | Out-Host
+    if ($payload.Kind -in @('Drivers', 'Boot check', 'Boot prepare')) {
+        $installation = & $payload.Engine @parameters
+        $result.RebootRequired = [bool]$installation.RebootRequired
+        $result.Message = $installation.Message
+        $result.CanPrepare = [bool]$installation.CanPrepare
+        Write-Host $result.Message
+    } else {
+        & $payload.Engine @parameters | Out-Host
+        $result.Message = 'Operation completed.'
+    }
     $result.Success = $true
-    $result.Message = 'Operation completed.'
 } catch {
     $result.Message = $_.Exception.Message
     Write-Host ('ERROR: ' + $result.Message)
@@ -339,7 +417,21 @@ $timer.Add_Tick({
         if (-not (Test-Path -LiteralPath $job.Result)) { throw "The worker process stopped without a result (exit code $($job.Process.ExitCode)). Check $($script:Ui.LogDirectory)." }
         $result = Get-Content -LiteralPath $job.Result -Raw | ConvertFrom-Json
         if (-not $result.Success -or $job.Process.ExitCode -ne 0) { throw $result.Message }
-        if ($job.Kind -eq 'Dry run') {
+        if ($job.Kind -eq 'Drivers') {
+            $script:Ui.RebootRequired = [bool]$result.RebootRequired
+            $driverStatusLabel.Text = $result.Message
+            Refresh-Adapters
+            $statusLabel.Text = $result.Message
+            if ($script:Ui.RebootRequired) {
+                [System.Windows.Forms.MessageBox]::Show($form, $result.Message, 'Restart required', 'OK', 'Information') | Out-Null
+            }
+        } elseif ($job.Kind -in @('Boot check', 'Boot prepare')) {
+            $bootStatusLabel.Text = $result.Message
+            $statusLabel.Text = $result.Message
+            if ($job.Kind -eq 'Boot check' -and $result.CanPrepare) {
+                $script:Ui.BootCheckedService = $job.Parameters.Service
+            }
+        } elseif ($job.Kind -eq 'Dry run') {
             $script:Ui.PreviewKey = $job.Key
             $statusLabel.Text = 'Dry run succeeded. No settings were changed. You can now restore the configuration.'
         } elseif ($job.Kind -eq 'Export') {
@@ -358,6 +450,34 @@ $timer.Add_Tick({
     }
 })
 
+$bootServiceCombo.Add_SelectedIndexChanged({
+    $script:Ui.BootCheckedService = ''
+    $bootStatusLabel.Text = 'Controller selection changed. Check boot settings again.'
+    Update-Buttons
+})
+$checkBootButton.Add_Click({
+    try {
+        Start-Operation -Kind 'Boot check' -Parameters @{ Mode = 'Check'; Service = $bootServiceCombo.SelectedItem.Service }
+    } catch { Show-UiError $_.Exception.Message; Update-Buttons }
+})
+$prepareBootButton.Add_Click({
+    try {
+        $service = $bootServiceCombo.SelectedItem.Service
+        if ($script:Ui.BootCheckedService -ne $service) { throw 'Check the selected storage driver first.' }
+        $message = "Prepare $service for the Windows boot disk? The tool will back up the original values and set Start and any existing StartOverride value named 0 to Boot Start. Keep a VM backup and console access. After preparation, shut down for migration. This does not guarantee a successful boot on different hardware."
+        if ([System.Windows.Forms.MessageBox]::Show($form, $message, 'Prepare storage boot driver', 'YesNo', 'Warning', 'Button2') -ne 'Yes') { return }
+        Start-Operation -Kind 'Boot prepare' -Parameters @{ Mode = 'Prepare'; Service = $service }
+    } catch { Show-UiError $_.Exception.Message; Update-Buttons }
+})
+$installDriversButton.Add_Click({
+    try {
+        $message = 'Open VirtIO Guest Tools setup? It can install drivers and guest agents, including QEMU Guest Agent and SPICE components. Export your network settings first and use the VM console. Networking may be interrupted. Automatic restarts are suppressed.'
+        if ([System.Windows.Forms.MessageBox]::Show($form, $message, 'Install VirtIO drivers', 'YesNo', 'Warning', 'Button2') -ne 'Yes') { return }
+        Start-Operation -Kind 'Drivers' -Parameters @{
+            InstallerPath = $script:Ui.DriverInstaller; ManifestPath = $script:Ui.DriverManifest
+        }
+    } catch { Show-UiError $_.Exception.Message; Update-Buttons }
+})
 $refreshButton.Add_Click({ try { Refresh-Adapters } catch { Show-UiError $_.Exception.Message } })
 $exportButton.Add_Click({
     $dialog = New-Object System.Windows.Forms.SaveFileDialog
