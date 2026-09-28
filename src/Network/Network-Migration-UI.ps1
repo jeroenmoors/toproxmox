@@ -48,6 +48,18 @@ if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot 'Install-VirtioDrivers
     $repositoryRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
     $driverInstallerPath = Join-Path $repositoryRoot ('.cache/virtio-win/' + $driverManifest.Version + '/virtio-win-guest-tools.exe')
 }
+$versionPath = Join-Path $PSScriptRoot 'version.json'
+if (Test-Path -LiteralPath $versionPath -PathType Leaf) {
+    $appVersion = (Get-Content -LiteralPath $versionPath -Raw | ConvertFrom-Json).DisplayVersion
+} else {
+    # Source checkouts resolve the current revision; packages never need Git.
+    try {
+        $versionRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+        $appVersion = (& (Join-Path $versionRoot 'scripts/Get-Version.ps1') -RepositoryRoot $versionRoot).DisplayVersion
+    } catch {
+        $appVersion = 'development (version unavailable)'
+    }
+}
 $script:Ui = @{
     Busy = $false; Job = $null; ExportPath = ''; ExportHash = ''; Saved = $null
     PreviewKey = ''; LogDirectory = ''; Engine = $enginePath; PowerShell = $nativePs
@@ -98,7 +110,7 @@ function Update-Buttons {
 }
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'ToProxmox | Windows migration'
+$form.Text = "ToProxmox v$appVersion | Windows migration"
 $form.StartPosition = 'CenterScreen'
 $form.ClientSize = New-Object System.Drawing.Size(980, 730)
 $form.MinimumSize = New-Object System.Drawing.Size(860, 680)
@@ -125,7 +137,7 @@ $form.Controls.Add($root)
 $title = New-Label 'Prepare Windows for Proxmox'
 $title.Font = New-Object System.Drawing.Font('Segoe UI', 18, [Drawing.FontStyle]::Bold)
 $root.Controls.Add($title, 0, 0)
-$intro = New-Label "Computer: $env:COMPUTERNAME  |  Administrator`r`nRestore using the Proxmox console. Network connectivity will be temporarily interrupted."
+$intro = New-Label "ToProxmox v$appVersion  |  Computer: $env:COMPUTERNAME  |  Administrator`r`nRestore using the Proxmox console. Network connectivity will be temporarily interrupted."
 $root.Controls.Add($intro, 0, 1)
 
 $tabs = New-Object System.Windows.Forms.TabControl

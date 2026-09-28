@@ -9,6 +9,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $entryPath = Join-Path $root 'src/ToProxmox.ps1'
+$version = & (Join-Path $PSScriptRoot 'Get-Version.ps1') -RepositoryRoot $root
 if ($SkipDrivers -and $DriverInstallerPath) { throw 'SkipDrivers and DriverInstallerPath cannot be combined.' }
 $files = [ordered]@{
     'Migrate-Network.ps1' = (Join-Path $root 'src/Network/Migrate-Network.ps1')
@@ -35,6 +36,7 @@ foreach ($name in $files.Keys) {
     }
     $payload[$name] = [Convert]::ToBase64String([IO.File]::ReadAllBytes($path))
 }
+$payload['version.json'] = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($version | ConvertTo-Json -Compress)))
 $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($payload | ConvertTo-Json -Compress)))
 $template = [IO.File]::ReadAllText($entryPath)
 $marker = '$embeddedPayload = '''' # PACKAGE_PAYLOAD'
@@ -72,5 +74,5 @@ $outputPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromP
 [void][IO.Directory]::CreateDirectory($outputPath)
 $destination = Join-Path $outputPath 'ToProxmox.cmd'
 [IO.File]::WriteAllText($destination, $package, (New-Object Text.UTF8Encoding($false)))
-Write-Host "Package created: $destination"
+Write-Host "Package created: $destination (version $($version.DisplayVersion))"
 Get-Item -LiteralPath $destination

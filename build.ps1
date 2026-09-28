@@ -18,6 +18,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 if ($Command -eq 'test') {
+    & (Join-Path $PSScriptRoot 'tests/Test-Version.ps1')
     & (Join-Path $PSScriptRoot 'tests/Test-Package.ps1')
     & (Join-Path $PSScriptRoot 'tests/Test-Drivers.ps1')
     & (Join-Path $PSScriptRoot 'tests/Test-VirtioBoot.ps1')

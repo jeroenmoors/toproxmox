@@ -38,7 +38,7 @@ try {
         $runtimeDirectory = Join-Path ([IO.Path]::GetTempPath()) ('ToProxmox-' + [guid]::NewGuid().ToString('N'))
         [void][IO.Directory]::CreateDirectory($runtimeDirectory)
         $allowedNames = @('Migrate-Network.ps1', 'Network-Migration-UI.ps1', 'Install-VirtioDrivers.ps1',
-            'VirtioDriverTools.ps1', 'Prepare-VirtioBoot.ps1', 'VirtioBootTools.ps1', 'virtio-win.json', 'THIRD-PARTY.md')
+            'VirtioDriverTools.ps1', 'Prepare-VirtioBoot.ps1', 'VirtioBootTools.ps1', 'virtio-win.json', 'THIRD-PARTY.md', 'version.json')
         foreach ($property in $payload.PSObject.Properties) {
             $name = $property.Name
             if ($name -cnotin $allowedNames) { throw "Unexpected package entry: $name" }

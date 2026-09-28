@@ -53,6 +53,28 @@ the console stays open so the error can be read. Automated callers can pass
 `--no-pause` to return the exit code immediately. Organization-enforced script
 restrictions still apply.
 
+## App version
+
+The window title and header show the app version. Versions are calculated from
+Git as `0.1.<reachable commit count>`, so every new commit in the current history
+increases the number. The current four-commit history gives `0.1.4`; the next
+commit gives `0.1.5`. The display also includes the first 12 characters of the
+commit hash, for example `0.1.4+gc1d80ead76a7`.
+
+Builds with uncommitted or untracked changes are marked `-dev`, for example
+`0.1.4-dev+gc1d80ead76a7`. Ignored build artifacts and the driver cache do not mark
+a checkout as modified. Rebuilding the same revision does not increment its version.
+Commit counts are relative to each branch's history: merges can advance the
+number by more than one, and rewriting history can change the count. The commit
+identifier distinguishes branches and amended commits with the same count.
+
+The build embeds `version.json` inside the package; the Windows VM does not need
+Git and a downloaded package keeps its original version. Rebuild after a commit
+to distribute the new version. Building requires Git and a checkout with complete
+history. For shallow clones, run `git fetch --unshallow`; CI fetches full history.
+A source checkout resolves its version at startup, or shows an explicit development
+label if Git metadata is unavailable. No commit hooks or manual version bumps are needed.
+
 ## Installing VirtIO drivers
 
 Open **Install drivers**, click **Install VirtIO drivers...**, and complete the

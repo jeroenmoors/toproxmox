@@ -13,6 +13,8 @@ jobs:
         shell: [powershell, pwsh]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Validate package
         shell: ${{ matrix.shell }}
         run: ./build.ps1 test

@@ -34,7 +34,14 @@ try {
     if ($driverAssignment.Right.Expression.Value) { throw 'SkipDrivers still embedded an installer.' }
     $encoded = $assignment.Right.Expression.Value
     $payload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($encoded)) | ConvertFrom-Json
-    if (@($payload.PSObject.Properties).Count -ne 8) { throw 'Unexpected package contents.' }
+    if (@($payload.PSObject.Properties).Count -ne 9) { throw 'Unexpected package contents.' }
+    $embeddedVersion = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($payload.'version.json')) | ConvertFrom-Json
+    $expectedVersion = & (Join-Path $root 'scripts/Get-Version.ps1') -RepositoryRoot $root
+    if ($embeddedVersion.DisplayVersion -cne $expectedVersion.DisplayVersion -or
+        $embeddedVersion.Commit -cne $expectedVersion.Commit -or
+        $embeddedVersion.Modified -ne $expectedVersion.Modified) {
+        throw 'The package version does not match its Git revision and working-tree state.'
+    }
     $expectedFiles = @{
         'Migrate-Network.ps1' = 'src/Network/Migrate-Network.ps1'
         'Network-Migration-UI.ps1' = 'src/Network/Network-Migration-UI.ps1'
