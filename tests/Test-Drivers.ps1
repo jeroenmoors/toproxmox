@@ -4,6 +4,7 @@
 param()
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'PackageTestHelpers.ps1')
 . (Join-Path $root 'src/Drivers/VirtioDriverTools.ps1')
 function Assert-Failure([scriptblock]$Action, [string]$Pattern) {
     $caught = $null
@@ -37,7 +38,7 @@ try {
     # Verify the bundled binary and its manifest survive packaging byte for byte.
     $package = & (Join-Path $root 'scripts/Package.ps1') -OutputDirectory (Join-Path $temp 'output') -DriverInstallerPath $installer -DriverManifestPath $manifestPath
     $tokens = $null; $parseErrors = $null
-    $ast = [Management.Automation.Language.Parser]::ParseFile($package.FullName, [ref]$tokens, [ref]$parseErrors)
+    $ast = [Management.Automation.Language.Parser]::ParseInput((Read-PackagedPowerShell $package.FullName), [ref]$tokens, [ref]$parseErrors)
     if ($parseErrors.Count -gt 0) { throw 'Driver-enabled package contains syntax errors.' }
     $assignment = $ast.Find({
         param($node)
@@ -84,7 +85,7 @@ try {
     }
     Assert-Failure { & $resolveScript -ManifestPath $manifestPath -CacheDirectory $cache -InstallerPath $installer } '*checksum mismatch*'
     Assert-Failure { & (Join-Path $root 'scripts/Package.ps1') -OutputDirectory (Join-Path $temp 'bad-output') -DriverInstallerPath $installer -DriverManifestPath $manifestPath } '*checksum mismatch*'
-    if (Test-Path -LiteralPath (Join-Path $temp 'bad-output/ToProxmox.ps1')) { throw 'A corrupt installer was packaged.' }
+    if (Test-Path -LiteralPath (Join-Path $temp 'bad-output/ToProxmox.cmd')) { throw 'A corrupt installer was packaged.' }
 
     function Start-Process {
         param($FilePath, $ArgumentList, [switch]$Wait, [switch]$PassThru)

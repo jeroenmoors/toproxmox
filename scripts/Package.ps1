@@ -51,10 +51,26 @@ $package = $package.Replace($driverMarker, ('$embeddedDriver = ''' + $driverData
 $tokens = $null; $parseErrors = $null
 [void][Management.Automation.Language.Parser]::ParseInput($package, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count -gt 0) { throw "Syntax error in package: $($parseErrors -join '; ')" }
-# UTF-8 BOM preserves non-ASCII text when Windows PowerShell 5.1 reads the file.
+# A short CMD header runs a bootstrap; the large PowerShell payload is never a CMD command.
+$bootstrap = [IO.File]::ReadAllText((Join-Path $root 'src/Launch-Package.ps1'))
+[void][Management.Automation.Language.Parser]::ParseInput($bootstrap, [ref]$tokens, [ref]$parseErrors)
+if ($parseErrors.Count -gt 0) { throw "Syntax error in bootstrap: $($parseErrors -join '; ')" }
+$bootstrap64 = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($bootstrap))
+$header = [IO.File]::ReadAllText((Join-Path $root 'src/Launch-Package.cmd'))
+if (($header.Split([string[]]@('__BOOTSTRAP__'), [StringSplitOptions]::None)).Count -ne 2) {
+    throw 'The CMD template must contain exactly one bootstrap marker.'
+}
+$header = $header.Replace('__BOOTSTRAP__', $bootstrap64)
+$header = ($header -replace '\r?\n', "`r`n").TrimEnd([char[]]"`r`n")
+if (@($header -split "`r`n" | Where-Object { $_.Length -gt 7500 }).Count -gt 0) {
+    throw 'The bootstrap exceeds the CMD command-line length budget.'
+}
+$package = $header + "`r`n# TOPROXMOX_POWERSHELL_PAYLOAD`r`n" + $package
+# CMD needs a BOM-free header. The bootstrap writes a UTF-8 BOM for Windows PowerShell.
+
 $outputPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDirectory)
 [void][IO.Directory]::CreateDirectory($outputPath)
-$destination = Join-Path $outputPath 'ToProxmox.ps1'
-[IO.File]::WriteAllText($destination, $package, (New-Object Text.UTF8Encoding($true)))
+$destination = Join-Path $outputPath 'ToProxmox.cmd'
+[IO.File]::WriteAllText($destination, $package, (New-Object Text.UTF8Encoding($false)))
 Write-Host "Package created: $destination"
 Get-Item -LiteralPath $destination

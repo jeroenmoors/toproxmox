@@ -32,19 +32,26 @@ The first build downloads and caches the pinned VirtIO Guest Tools installer:
 # Offline build: .\build.ps1 package -DriverInstallerPath C:\Downloads\virtio-win-guest-tools.exe
 ```
 
-This creates **`dist/ToProxmox.ps1`**, the only file users need to download.
-Run the downloaded file inside the Windows VM:
+This creates **`dist/ToProxmox.cmd`**, the only file users need to download.
+**Double-click `ToProxmox.cmd` inside the Windows VM**, then accept the
+administrator prompt. No PowerShell file-association changes are needed.
+You can also start it from a terminal:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\ToProxmox.ps1
+.\ToProxmox.cmd
 ```
 
-The package embeds the interface, backend, and verified driver installer as Base64 data. After elevation, if
-needed, it extracts them into a unique temporary directory, waits for the interface
-to close, and removes the temporary files. No downloads are required at startup.
+The package contains a short Windows CMD launcher and the embedded PowerShell tool,
+interface, backend, and verified driver installer. The launcher extracts the
+PowerShell entry point to a unique temporary directory and runs Windows PowerShell.
+The entry point handles elevation and extracts the application files. Both layers
+wait for the interface to close before removing their temporary files. No downloads are required at startup.
 Exports and logs are stored outside the temporary directory. ExecutionPolicy Bypass
 applies only to the launched processes; enforced organizational policy still applies.
-The file is a PowerShell script, not an `.exe`.
+The downloaded file is a `.cmd` launcher containing the PowerShell tool. On failure,
+the console stays open so the error can be read. Automated callers can pass
+`--no-pause` to return the exit code immediately. Organization-enforced script
+restrictions still apply.
 
 ## Installing VirtIO drivers
 
@@ -75,10 +82,12 @@ check is not a successful boot test.
 
 ```text
 AGENTS.md                    Project language instructions
-src/ToProxmox.ps1             Main launcher and package template
+src/ToProxmox.ps1             PowerShell entry point and package payload
+src/Launch-Package.cmd       Double-click launcher template
+src/Launch-Package.ps1       Embedded extraction bootstrap
 src/Network/                 Network backend and Windows Forms interface
 src/Drivers/                 Driver installation, checks and pinned version
-scripts/Package.ps1           Builds the standalone script
+scripts/Package.ps1           Builds the standalone CMD package
 build.ps1                    Package and test commands
 tests/                       Build and driver checks without external test modules
 docs/                        Network migration and driver guides
@@ -96,7 +105,8 @@ The tests check PowerShell syntax, exact embedding of source file bytes, paths
 containing spaces, reproducible builds, driver checksums, caching, and installer
 exit handling, and storage boot preparation with simulated registry state. They use local fixtures without downloads and do not launch the
 interface, install drivers, or change network settings. GitHub Actions runs these checks with Windows PowerShell
-5.1 and PowerShell 7 and saves the package as a build artifact.
+5.1 and PowerShell 7, checks the CMD launcher using harmless payloads on Windows,
+and saves the package as a build artifact. Windows process tests are skipped on Linux.
 
 ## Migrating network settings
 

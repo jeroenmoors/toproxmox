@@ -1,7 +1,7 @@
 # VirtIO drivers and guest tools
 
 ToProxmox can open the upstream VirtIO Guest Tools installer from its **3. VirtIO
-drivers** tab. The complete installer is carried inside the ToProxmox script;
+drivers** tab. The complete installer is carried inside the ToProxmox CMD package;
 the VM does not need a network connection to download it.
 
 The bundle includes VirtIO drivers and guest agents, including QEMU Guest Agent
@@ -25,7 +25,7 @@ The first build downloads the version pinned in `src/Drivers/virtio-win.json`
 from the upstream HTTPS archive and validates its SHA-256. The verified installer
 is cached under `.cache/virtio-win/<version>/`. Subsequent builds reuse that copy
 and verify its hash again. Neither the cache nor `dist/` belongs in Git.
-The output is still a single `dist/ToProxmox.ps1`, approximately 41 MiB with the
+The output is still a single `dist/ToProxmox.cmd`, approximately 41 MiB with the
 currently pinned installer. Base64 encoding increases its size; it also needs more
 memory and time to start than a package without drivers.
 

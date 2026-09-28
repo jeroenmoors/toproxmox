@@ -1,7 +1,7 @@
 ﻿#Requires -Version 5.1
 <#
 Windows Forms frontend for the bundled Migrate-Network.ps1.
-Run with ToProxmox.ps1, inside the Windows VM (Desktop Experience).
+Run with ToProxmox.cmd (or src/ToProxmox.ps1), inside the Windows VM (Desktop Experience).
 Operations run in a separate elevated Windows PowerShell process. The UI polls
 its transcript and structured result, without blocking the WinForms event loop.
 No network changes occur merely by opening the UI or inspecting an export.
@@ -27,7 +27,7 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     exit 0
 }
 if ([Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') {
-    [System.Windows.Forms.MessageBox]::Show('Start using ToProxmox.ps1 (Windows PowerShell in STA mode).', 'Network migration') | Out-Null
+    [System.Windows.Forms.MessageBox]::Show('Start using ToProxmox.cmd, or run src/ToProxmox.ps1 in Windows PowerShell STA mode.', 'Network migration') | Out-Null
     exit 1
 }
 $enginePath = Join-Path $PSScriptRoot 'Migrate-Network.ps1'

@@ -6,8 +6,8 @@ computer can still access the Proxmox console. No additional PowerShell modules
 are required beyond the Windows modules NetTCPIP, DnsClient, NetAdapter and PnpDevice.
 
 GETTING STARTED
-1. Download the standalone ToProxmox.ps1 package to a local directory.
-2. Run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\ToProxmox.ps1
+1. Download the standalone ToProxmox.cmd package to a local directory.
+2. Double-click ToProxmox.cmd.
 3. Accept the Windows prompt for administrator privileges.
 From a source checkout, use .\src\ToProxmox.ps1 instead. See README.md for build
 instructions. The package automatically extracts and cleans up its runtime files.

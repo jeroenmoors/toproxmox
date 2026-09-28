@@ -4,6 +4,7 @@
 param()
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'PackageTestHelpers.ps1')
 $temp = Join-Path ([IO.Path]::GetTempPath()) ('ToProxmox-test-' + [guid]::NewGuid().ToString('N'))
 try {
     foreach ($directory in @('src', 'scripts', 'tests')) {
@@ -14,8 +15,9 @@ try {
         }
     }
     $package = & (Join-Path $root 'build.ps1') package -SkipDrivers -OutputDirectory (Join-Path $temp 'directory with spaces')
+    if ($package.Extension -ne '.cmd') { throw 'The download must be a double-clickable CMD file.' }
     $tokens = $null; $parseErrors = $null
-    $ast = [Management.Automation.Language.Parser]::ParseFile($package.FullName, [ref]$tokens, [ref]$parseErrors)
+    $ast = [Management.Automation.Language.Parser]::ParseInput((Read-PackagedPowerShell $package.FullName), [ref]$tokens, [ref]$parseErrors)
     if ($parseErrors.Count -gt 0) { throw 'The package contains syntax errors.' }
     $assignment = $ast.Find({
         param($node)
@@ -55,6 +57,7 @@ try {
     if (@(Get-ChildItem -LiteralPath $package.DirectoryName -File).Count -ne 1) {
         throw 'The distribution must contain exactly one file.'
     }
+    & (Join-Path $PSScriptRoot 'Test-CmdLauncher.ps1') -PackagePath $package.FullName
     Write-Host 'OK: syntax, embedded source files, path with spaces and reproducible single-file build.'
 } finally {
     if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }
