@@ -130,11 +130,11 @@ $root.Controls.Add($intro, 0, 1)
 
 $tabs = New-Object System.Windows.Forms.TabControl
 $tabs.Dock = 'Fill'
-$exportTab = New-Object System.Windows.Forms.TabPage('1. Before migration')
-$restoreTab = New-Object System.Windows.Forms.TabPage('2. After migration')
-$driversTab = New-Object System.Windows.Forms.TabPage('3. VirtIO drivers')
+$exportTab = New-Object System.Windows.Forms.TabPage('Save network config')
+$restoreTab = New-Object System.Windows.Forms.TabPage('Restore network config')
+$driversTab = New-Object System.Windows.Forms.TabPage('Install drivers')
 $bootTab = New-Object System.Windows.Forms.TabPage('Boot preparation')
-$tabs.TabPages.AddRange(@($exportTab, $restoreTab, $driversTab, $bootTab))
+$tabs.TabPages.AddRange(@($driversTab, $bootTab, $exportTab, $restoreTab))
 $root.Controls.Add($tabs, 0, 2)
 
 $exportLayout = New-Object System.Windows.Forms.TableLayoutPanel

@@ -55,7 +55,7 @@ restrictions still apply.
 
 ## Installing VirtIO drivers
 
-Open **3. VirtIO drivers**, click **Install VirtIO drivers...**, and complete the
+Open **Install drivers**, click **Install VirtIO drivers...**, and complete the
 upstream installation wizard. Export your network settings first and use the VM
 console. The bundle includes drivers and guest agents; automatic restarts are
 suppressed, and the tool reports when Windows needs a restart.

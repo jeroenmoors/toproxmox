@@ -1,7 +1,6 @@
 # VirtIO drivers and guest tools
 
-ToProxmox can open the upstream VirtIO Guest Tools installer from its **3. VirtIO
-drivers** tab. The complete installer is carried inside the ToProxmox CMD package;
+ToProxmox can open the upstream VirtIO Guest Tools installer from its **Install drivers** tab. The complete installer is carried inside the ToProxmox CMD package;
 the VM does not need a network connection to download it.
 
 The bundle includes VirtIO drivers and guest agents, including QEMU Guest Agent
@@ -49,7 +48,7 @@ make driver setup available during development.
 ## Install on a VM
 
 1. Export the original network settings and keep a copy outside the VM.
-2. Open the VM console and select **3. VirtIO drivers**.
+2. Open the VM console and select **Install drivers**.
 3. Click **Install VirtIO drivers...**, confirm, and complete the upstream wizard.
 4. Restart Windows if setup requests it. ToProxmox reports the reboot requirement
    and blocks network restore, boot preparation writes, and another installation
