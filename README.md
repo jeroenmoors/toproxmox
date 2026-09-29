@@ -87,6 +87,19 @@ Installing drivers alone does not guarantee booting from a new storage controlle
 See the [driver guide](docs/drivers.md) for migration steps, offline builds, version
 pinning, and [third-party components](docs/THIRD-PARTY.md).
 
+## Registering the storage device
+
+On VMware the VirtIO controller is absent, so the Guest Tools installer stages the
+`vioscsi`/`viostor` package without creating its kernel service. Boot preparation
+then reports that the driver service is missing. Open **Register storage device**,
+select **VirtIO SCSI** (`vioscsi`) or **VirtIO Block** (`viostor`), check, and
+register. This mirrors the **Add legacy hardware** wizard: it creates a
+root-enumerated device for the driver's hardware ID and force-installs the staged
+package so the service is created. Run this only when boot preparation reports a
+missing service; if the service already exists, this step is not needed.
+
+See [boot preparation](docs/boot-preparation.md) for the full flow and CLI usage.
+
 ## Preparing the boot driver before migration
 
 After installing the drivers and completing any requested restart, open **Boot
@@ -125,7 +138,7 @@ Edit the application code under `src`.
 
 The tests check PowerShell syntax, exact embedding of source file bytes, paths
 containing spaces, reproducible builds, driver checksums, caching, and installer
-exit handling, and storage boot preparation with simulated registry state. They use local fixtures without downloads and do not launch the
+exit handling, and storage device registration and boot preparation with simulated registry state. They use local fixtures without downloads and do not launch the
 interface, install drivers, or change network settings. GitHub Actions runs these checks with Windows PowerShell
 5.1 and PowerShell 7, checks the CMD launcher using harmless payloads on Windows,
 and saves the package as a build artifact. Windows process tests are skipped on Linux.

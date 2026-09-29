@@ -34,7 +34,7 @@ try {
     if ($driverAssignment.Right.Expression.Value) { throw 'SkipDrivers still embedded an installer.' }
     $encoded = $assignment.Right.Expression.Value
     $payload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($encoded)) | ConvertFrom-Json
-    if (@($payload.PSObject.Properties).Count -ne 9) { throw 'Unexpected package contents.' }
+    if (@($payload.PSObject.Properties).Count -ne 11) { throw 'Unexpected package contents.' }
     $embeddedVersion = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($payload.'version.json')) | ConvertFrom-Json
     $expectedVersion = & (Join-Path $root 'scripts/Get-Version.ps1') -RepositoryRoot $root
     if ($embeddedVersion.DisplayVersion -cne $expectedVersion.DisplayVersion -or
@@ -49,6 +49,8 @@ try {
         'VirtioDriverTools.ps1' = 'src/Drivers/VirtioDriverTools.ps1'
         'Prepare-VirtioBoot.ps1' = 'src/Drivers/Prepare-VirtioBoot.ps1'
         'VirtioBootTools.ps1' = 'src/Drivers/VirtioBootTools.ps1'
+        'Register-VirtioStorage.ps1' = 'src/Drivers/Register-VirtioStorage.ps1'
+        'VirtioStorageDeviceTools.ps1' = 'src/Drivers/VirtioStorageDeviceTools.ps1'
         'virtio-win.json' = 'src/Drivers/virtio-win.json'
         'THIRD-PARTY.md' = 'docs/THIRD-PARTY.md'
     }

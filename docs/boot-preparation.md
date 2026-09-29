@@ -31,6 +31,15 @@ was merely staged, without registering the driver service, is insufficient:
 ToProxmox reports this and does not fabricate a service by creating registry keys.
 Repair the installation or use the compatible-controller migration procedure below.
 
+## When the driver service is missing (VMware)
+
+On VMware the VirtIO controller is absent, so the Guest Tools installer stages the
+`vioscsi`/`viostor` package without creating its kernel service. Boot preparation
+then reports that the driver service is missing. Register the device first with the
+**Register storage device** step, which recreates the service from the staged
+package, then return here to check and prepare. See
+[registering the storage device](drivers.md#registering-the-storage-device-on-vmware).
+
 ## Why NetKVM is not changed
 
 Demand Start (`3`) does not mean a Plug and Play driver is disabled. Windows can

@@ -18,6 +18,8 @@ $files = [ordered]@{
     'VirtioDriverTools.ps1' = (Join-Path $root 'src/Drivers/VirtioDriverTools.ps1')
     'Prepare-VirtioBoot.ps1' = (Join-Path $root 'src/Drivers/Prepare-VirtioBoot.ps1')
     'VirtioBootTools.ps1' = (Join-Path $root 'src/Drivers/VirtioBootTools.ps1')
+    'Register-VirtioStorage.ps1' = (Join-Path $root 'src/Drivers/Register-VirtioStorage.ps1')
+    'VirtioStorageDeviceTools.ps1' = (Join-Path $root 'src/Drivers/VirtioStorageDeviceTools.ps1')
     'virtio-win.json' = $DriverManifestPath
     'THIRD-PARTY.md' = (Join-Path $root 'docs/THIRD-PARTY.md')
 }

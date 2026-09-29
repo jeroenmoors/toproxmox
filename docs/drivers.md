@@ -58,6 +58,43 @@ make driver setup available during development.
 6. Verify the devices in Device Manager. After migration, select the new network
    adapter and perform a fresh dry run before restoring its settings.
 
+## Registering the storage device on VMware
+
+The upstream installer only creates the `vioscsi`/`viostor` kernel service when a
+matching VirtIO controller is present. On VMware that controller is absent, so the
+installer stages the driver package into the DriverStore without registering the
+service. [Boot preparation](boot-preparation.md) then reports that the driver
+service is missing and refuses to fabricate one.
+
+Use **Register storage device** to resolve this. It reproduces the **Add legacy
+hardware** (`hdwwiz`) flow through the Windows SetupAPI: it creates a
+root-enumerated device for the staged package's hardware ID
+(`PCI\VEN_1AF4&DEV_xxxx`) and force-installs the driver, which creates the kernel
+service. No external tools such as `devcon` are required.
+
+1. Install the VirtIO drivers first, so the package is staged.
+2. Open **Register storage device** and select **VirtIO SCSI** (`vioscsi`) or
+   **VirtIO Block** (`viostor`) to match the intended Proxmox boot controller.
+3. Click **Check** to inspect the staged package and report whether the service
+   already exists, then **Register** to create the device and service.
+4. Continue with [Boot preparation](boot-preparation.md).
+
+The step is idempotent: if the service already exists with a valid registered
+driver binary, no new device is created. If a service exists but its registered
+binary is missing or unexpected, ToProxmox blocks and asks you to repair or remove
+it manually rather than creating a duplicate device.
+
+Run it from the command line inside the VM in an elevated session:
+
+```powershell
+.\src\Drivers\Register-VirtioStorage.ps1 -Mode Check -Service vioscsi
+.\src\Drivers\Register-VirtioStorage.ps1 -Mode Register -Service vioscsi -WhatIf
+.\src\Drivers\Register-VirtioStorage.ps1 -Mode Register -Service vioscsi
+```
+
+Use `-Service viostor` only for a VirtIO Block boot disk. `-WhatIf` makes no
+changes. These scripts are included in both regular and `-SkipDrivers` packages.
+
 Driver installation shares the operation lock with network export and restore.
 Its transcript, structured result, and `virtio-setup.log` are kept under
 `C:\ProgramData\NetworkMigration\Logs`, outside the temporary package directory.

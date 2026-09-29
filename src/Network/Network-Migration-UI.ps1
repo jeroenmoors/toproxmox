@@ -67,6 +67,7 @@ $script:Ui = @{
     DriverInstaller = $driverInstallerPath; DriverManifest = $driverManifestPath
     RebootRequired = $false; BootCheckedService = ''
     BootEngine = (Join-Path $driverRoot 'Prepare-VirtioBoot.ps1')
+    StorageEngine = (Join-Path $driverRoot 'Register-VirtioStorage.ps1'); StorageCheckedService = ''
 }
 
 function New-Label([string]$Text) {
@@ -105,6 +106,9 @@ function Update-Buttons {
     $checkBootButton.Enabled = -not $busy
     $prepareBootButton.Enabled = -not $busy -and -not $script:Ui.RebootRequired -and
         $script:Ui.BootCheckedService -eq $bootServiceCombo.SelectedItem.Service
+    $checkStorageButton.Enabled = -not $busy -and -not $script:Ui.RebootRequired
+    $registerStorageButton.Enabled = -not $busy -and -not $script:Ui.RebootRequired -and
+        $script:Ui.StorageCheckedService -eq $storageServiceCombo.SelectedItem.Service
     $installDriversButton.Enabled = -not $busy -and -not $script:Ui.RebootRequired -and
         (Test-Path -LiteralPath $script:Ui.DriverInstaller -PathType Leaf)
 }
@@ -145,8 +149,9 @@ $tabs.Dock = 'Fill'
 $exportTab = New-Object System.Windows.Forms.TabPage('Save network config')
 $restoreTab = New-Object System.Windows.Forms.TabPage('Restore network config')
 $driversTab = New-Object System.Windows.Forms.TabPage('Install drivers')
+$storageTab = New-Object System.Windows.Forms.TabPage('Register storage device')
 $bootTab = New-Object System.Windows.Forms.TabPage('Boot preparation')
-$tabs.TabPages.AddRange(@($driversTab, $bootTab, $exportTab, $restoreTab))
+$tabs.TabPages.AddRange(@($driversTab, $storageTab, $bootTab, $exportTab, $restoreTab))
 $root.Controls.Add($tabs, 0, 2)
 
 $exportLayout = New-Object System.Windows.Forms.TableLayoutPanel
@@ -217,7 +222,7 @@ for ($row = 0; $row -lt 5; $row++) { [void]$driversLayout.RowStyles.Add((New-Obj
 $driversTab.Controls.Add($driversLayout)
 $driversLayout.Controls.Add((New-Label 'Install VirtIO drivers and guest agents for Proxmox. Export your network settings first. You can open setup before migration or after booting the migrated VM.'), 0, 0)
 $driversLayout.Controls.Add((New-Label 'Use the VM console: driver installation may interrupt networking. Complete the upstream installer window and restart Windows if requested.'), 0, 1)
-$driversLayout.Controls.Add((New-Label 'After installation and any required restart, open Boot preparation to check the storage driver before shutting down for migration.'), 0, 2)
+$driversLayout.Controls.Add((New-Label 'After installation and any required restart, open Register storage device if Boot preparation reports the storage service is missing, then check the storage driver before shutting down for migration.'), 0, 2)
 $driverStatusLabel = New-Label ''
 if (Test-Path -LiteralPath $script:Ui.DriverInstaller -PathType Leaf) {
     $driverStatusLabel.Text = "VirtIO Guest Tools $($driverManifest.Version) available. No installer download is needed on this VM."
@@ -228,13 +233,37 @@ $driversLayout.Controls.Add($driverStatusLabel, 0, 3)
 $installDriversButton = New-Button 'Install VirtIO drivers...' 240
 $driversLayout.Controls.Add($installDriversButton, 0, 4)
 
+$storageLayout = New-Object System.Windows.Forms.TableLayoutPanel
+$storageLayout.Dock = 'Fill'; $storageLayout.Padding = New-Object System.Windows.Forms.Padding(10)
+$storageLayout.ColumnCount = 1; $storageLayout.RowCount = 5; $storageLayout.AutoScroll = $true
+[void]$storageLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Percent', 100)))
+for ($row = 0; $row -lt 5; $row++) { [void]$storageLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize'))) }
+$storageTab.Controls.Add($storageLayout)
+$storageLayout.Controls.Add((New-Label 'On VMware the VirtIO controller is absent, so the installer only stages the storage driver without creating its service. Register the device here after installing the drivers, then use Boot preparation.'), 0, 0)
+$storageLayout.Controls.Add((New-Label 'This mirrors the "Add legacy hardware" wizard: it creates a device for the staged driver and registers its service. It creates no partition or data changes. Only run it when Boot preparation reports the service is missing.'), 0, 1)
+$storageServiceCombo = New-Object System.Windows.Forms.ComboBox
+$storageServiceCombo.Dock = 'Fill'; $storageServiceCombo.DropDownStyle = 'DropDownList'; $storageServiceCombo.DisplayMember = 'Label'
+[void]$storageServiceCombo.Items.Add([PSCustomObject]@{ Label = 'VirtIO SCSI / VirtIO SCSI single (vioscsi)'; Service = 'vioscsi' })
+[void]$storageServiceCombo.Items.Add([PSCustomObject]@{ Label = 'VirtIO Block (viostor)'; Service = 'viostor' })
+$storageServiceCombo.SelectedIndex = 0
+$storageLayout.Controls.Add($storageServiceCombo, 0, 2)
+$storageActions = New-Object System.Windows.Forms.FlowLayoutPanel
+$storageActions.AutoSize = $true; $storageActions.Dock = 'Fill'
+$checkStorageButton = New-Button '1. Check storage driver' 220
+$registerStorageButton = New-Button '2. Register storage device...' 260
+$registerStorageButton.Enabled = $false
+$storageActions.Controls.AddRange(@($checkStorageButton, $registerStorageButton))
+$storageLayout.Controls.Add($storageActions, 0, 3)
+$storageStatusLabel = New-Label 'Check first. Registration is only needed when the storage service is missing. After registering, continue with Boot preparation.'
+$storageLayout.Controls.Add($storageStatusLabel, 0, 4)
+
 $bootLayout = New-Object System.Windows.Forms.TableLayoutPanel
 $bootLayout.Dock = 'Fill'; $bootLayout.Padding = New-Object System.Windows.Forms.Padding(10)
 $bootLayout.ColumnCount = 1; $bootLayout.RowCount = 5; $bootLayout.AutoScroll = $true
 [void]$bootLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Percent', 100)))
 for ($row = 0; $row -lt 5; $row++) { [void]$bootLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize'))) }
 $bootTab.Controls.Add($bootLayout)
-$bootLayout.Controls.Add((New-Label 'Before migration: install the drivers, complete any required restart, then choose the controller that will host the Windows boot disk in Proxmox.'), 0, 0)
+$bootLayout.Controls.Add((New-Label 'Before migration: install the drivers, complete any required restart, then choose the controller that will host the Windows boot disk in Proxmox. If preparation reports the service is missing, use Register storage device first.'), 0, 0)
 $bootLayout.Controls.Add((New-Label 'Preparation checks the installed storage driver, saves the original startup values and enables Boot Start. NetKVM keeps its normal network-driver settings. A successful check is not a boot test.'), 0, 1)
 $bootServiceCombo = New-Object System.Windows.Forms.ComboBox
 $bootServiceCombo.Dock = 'Fill'; $bootServiceCombo.DropDownStyle = 'DropDownList'; $bootServiceCombo.DisplayMember = 'Label'
@@ -339,11 +368,15 @@ function Start-Operation([string]$Kind, [hashtable]$Parameters, [string]$Selecti
     New-Item -ItemType Directory -Path $opDir -Force | Out-Null
     $transcriptPath = Join-Path $opDir 'operation.log'
     $resultPath = Join-Path $opDir 'result.json'
-    if ($Kind -in @('Drivers', 'Boot check', 'Boot prepare')) { $script:Ui.BootCheckedService = '' }
+    if ($Kind -in @('Drivers', 'Boot check', 'Boot prepare', 'Storage register')) { $script:Ui.BootCheckedService = '' }
+    if ($Kind -in @('Drivers', 'Storage check', 'Storage register')) { $script:Ui.StorageCheckedService = '' }
     if ($Kind -eq 'Boot prepare') { $Parameters['BackupDirectory'] = $opDir }
     if ($Kind -eq 'Drivers') { $Parameters['LogPath'] = Join-Path $opDir 'virtio-setup.log' }
     $payload = @{
-        Engine = $(if ($Kind -eq 'Drivers') { $script:Ui.DriverEngine } elseif ($Kind -in @('Boot check', 'Boot prepare')) { $script:Ui.BootEngine } else { $script:Ui.Engine })
+        Engine = $(if ($Kind -eq 'Drivers') { $script:Ui.DriverEngine }
+            elseif ($Kind -in @('Boot check', 'Boot prepare')) { $script:Ui.BootEngine }
+            elseif ($Kind -in @('Storage check', 'Storage register')) { $script:Ui.StorageEngine }
+            else { $script:Ui.Engine })
         Kind = $Kind; Parameters = $Parameters; Transcript = $transcriptPath
         Result = $resultPath; ExportHash = $(if ($Kind -in @('Dry run', 'Restore')) { $script:Ui.ExportHash } else { '' })
         TargetGuid = $(if ($Kind -in @('Dry run', 'Restore')) { $targetCombo.SelectedItem.Guid } else { '' })
@@ -367,7 +400,7 @@ try {
         $target = @(Get-NetAdapter -Physical | Where-Object { $_.Name -eq $parameters.TargetAlias })
         if ($target.Count -ne 1 -or [string]$target[0].InterfaceGuid -ne $payload.TargetGuid) { throw 'Target adapter changed before execution.' }
     }
-    if ($payload.Kind -in @('Drivers', 'Boot check', 'Boot prepare')) {
+    if ($payload.Kind -in @('Drivers', 'Boot check', 'Boot prepare', 'Storage check', 'Storage register')) {
         $installation = & $payload.Engine @parameters
         $result.RebootRequired = [bool]$installation.RebootRequired
         $result.Message = $installation.Message
@@ -443,6 +476,18 @@ $timer.Add_Tick({
             if ($job.Kind -eq 'Boot check' -and $result.CanPrepare) {
                 $script:Ui.BootCheckedService = $job.Parameters.Service
             }
+        } elseif ($job.Kind -in @('Storage check', 'Storage register')) {
+            $storageStatusLabel.Text = $result.Message
+            $statusLabel.Text = $result.Message
+            if ($job.Kind -eq 'Storage check' -and $result.CanPrepare) {
+                $script:Ui.StorageCheckedService = $job.Parameters.Service
+            }
+            if ($job.Kind -eq 'Storage register') {
+                $script:Ui.RebootRequired = [bool]$result.RebootRequired
+                if ($script:Ui.RebootRequired) {
+                    [System.Windows.Forms.MessageBox]::Show($form, $result.Message, 'Restart required', 'OK', 'Information') | Out-Null
+                }
+            }
         } elseif ($job.Kind -eq 'Dry run') {
             $script:Ui.PreviewKey = $job.Key
             $statusLabel.Text = 'Dry run succeeded. No settings were changed. You can now restore the configuration.'
@@ -466,6 +511,25 @@ $bootServiceCombo.Add_SelectedIndexChanged({
     $script:Ui.BootCheckedService = ''
     $bootStatusLabel.Text = 'Controller selection changed. Check boot settings again.'
     Update-Buttons
+})
+$storageServiceCombo.Add_SelectedIndexChanged({
+    $script:Ui.StorageCheckedService = ''
+    $storageStatusLabel.Text = 'Controller selection changed. Check the storage driver again.'
+    Update-Buttons
+})
+$checkStorageButton.Add_Click({
+    try {
+        Start-Operation -Kind 'Storage check' -Parameters @{ Mode = 'Check'; Service = $storageServiceCombo.SelectedItem.Service }
+    } catch { Show-UiError $_.Exception.Message; Update-Buttons }
+})
+$registerStorageButton.Add_Click({
+    try {
+        $service = $storageServiceCombo.SelectedItem.Service
+        if ($script:Ui.StorageCheckedService -ne $service) { throw 'Check the selected storage driver first.' }
+        $message = "Register a $service storage device? This mirrors the Add legacy hardware wizard: it creates a device for the staged VirtIO driver and registers its service so the migrated VM can boot. It does not change partitions or data. Keep a VM backup and console access. Continue?"
+        if ([System.Windows.Forms.MessageBox]::Show($form, $message, 'Register storage device', 'YesNo', 'Warning', 'Button2') -ne 'Yes') { return }
+        Start-Operation -Kind 'Storage register' -Parameters @{ Mode = 'Register'; Service = $service }
+    } catch { Show-UiError $_.Exception.Message; Update-Buttons }
 })
 $checkBootButton.Add_Click({
     try {
