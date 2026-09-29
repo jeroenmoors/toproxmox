@@ -65,7 +65,7 @@ $script:Ui = @{
     PreviewKey = ''; LogDirectory = ''; Engine = $enginePath; PowerShell = $nativePs
     DriverEngine = (Join-Path $driverRoot 'Install-VirtioDrivers.ps1')
     DriverInstaller = $driverInstallerPath; DriverManifest = $driverManifestPath
-    RebootRequired = $false; Batch = $false; Queue = $null
+    RebootRequired = $false; Batch = $false; Queue = $null; Exiting = $false
     BootEngine = (Join-Path $driverRoot 'Prepare-VirtioBoot.ps1')
     StorageEngine = (Join-Path $driverRoot 'Register-VirtioStorage.ps1')
 }
@@ -118,8 +118,8 @@ function Update-Buttons {
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "ToProxmox v$appVersion | Windows migration"
 $form.StartPosition = 'CenterScreen'
-$form.ClientSize = New-Object System.Drawing.Size(980, 860)
-$form.MinimumSize = New-Object System.Drawing.Size(860, 780)
+$form.ClientSize = New-Object System.Drawing.Size(980, 700)
+$form.MinimumSize = New-Object System.Drawing.Size(860, 620)
 $form.Font = New-Object System.Drawing.Font('Segoe UI', 10)
 $form.AutoScaleDimensions = New-Object System.Drawing.SizeF(96, 96)
 $form.AutoScaleMode = 'Dpi'
@@ -127,16 +127,14 @@ $form.BackColor = [Drawing.Color]::WhiteSmoke
 
 $root = New-Object System.Windows.Forms.TableLayoutPanel
 $root.Dock = 'Fill'; $root.Padding = New-Object System.Windows.Forms.Padding(16)
-$root.ColumnCount = 1; $root.RowCount = 7
+$root.ColumnCount = 1; $root.RowCount = 6
 $root.AutoScroll = $true
 [void]$root.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Percent', 100)))
-# Text rows must include the label's preferred height AND margins. Fixed
-# 42px rows clipped the second intro line even at the normal desktop scale.
+# The tab area fills the window; the operation log is shown in a separate popup.
 [void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
-[void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
-[void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Absolute', 300)))
 [void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
 [void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Percent', 100)))
+[void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
 [void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
 [void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
 $form.Controls.Add($root)
@@ -264,20 +262,40 @@ $adapterText = New-ReadOnlyText
 $adapterText.Font = New-Object System.Drawing.Font('Consolas', 10)
 
 $root.Controls.Add((New-Label 'IPv4 + default routes. Additional static routes, manual IPv6 and teaming require separate handling.'), 0, 3)
-$logText = New-ReadOnlyText
-$logText.Font = New-Object System.Drawing.Font('Consolas', 9)
-$logText.MinimumSize = New-Object System.Drawing.Size(0, 260)
-$logText.WordWrap = $false; $logText.ScrollBars = 'Both'
-$root.Controls.Add($logText, 0, 4)
 $statusLabel = New-Label 'Ready. Viewing settings does not change anything.'
-$root.Controls.Add($statusLabel, 0, 5)
+$root.Controls.Add($statusLabel, 0, 4)
 $footer = New-Object System.Windows.Forms.FlowLayoutPanel
 $footer.AutoSize = $true; $footer.AutoSizeMode = 'GrowAndShrink'; $footer.Dock = 'Fill'; $footer.FlowDirection = 'RightToLeft'
 $closeButton = New-Button 'Close' 100
-$saveLogButton = New-Button 'Save log...' 180
+$saveLogButton = New-Button 'Save log...' 160
 $saveLogButton.Enabled = $false
-$footer.Controls.AddRange(@($closeButton, $saveLogButton))
-$root.Controls.Add($footer, 0, 6)
+$showLogButton = New-Button 'Show log' 140
+$footer.Controls.AddRange(@($closeButton, $saveLogButton, $showLogButton))
+$root.Controls.Add($footer, 0, 5)
+
+# The operation log lives in a separate popup so the tabs use the full window.
+$logForm = New-Object System.Windows.Forms.Form
+$logForm.Text = 'Operation log'
+$logForm.StartPosition = 'CenterParent'
+$logForm.ClientSize = New-Object System.Drawing.Size(840, 520)
+$logForm.MinimumSize = New-Object System.Drawing.Size(500, 300)
+$logForm.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+$logForm.ShowInTaskbar = $false
+$logText = New-Object System.Windows.Forms.TextBox
+$logText.Multiline = $true; $logText.ReadOnly = $true; $logText.Dock = 'Fill'
+$logText.Font = New-Object System.Drawing.Font('Consolas', 9)
+$logText.WordWrap = $false; $logText.ScrollBars = 'Both'
+$logForm.Controls.Add($logText)
+# Closing the popup only hides it; it is disposed when the app exits.
+$logForm.Add_FormClosing({
+    param($logSender, $eventArgs)
+    if (-not $script:Ui.Exiting) { $eventArgs.Cancel = $true; $logForm.Hide() }
+})
+function Show-LogWindow {
+    if (-not $logForm.Visible) { $logForm.Show($form) }
+    if ($logForm.WindowState -eq 'Minimized') { $logForm.WindowState = 'Normal' }
+    $logForm.BringToFront()
+}
 
 function Refresh-Adapters {
     Invalidate-Preview
@@ -449,6 +467,7 @@ if (-not $result.Success) { exit 1 }
     Invalidate-Preview
     $logText.Text = "Operation: $Kind`r`nLog directory: $opDir`r`nPlease wait..."
     $statusLabel.Text = "$Kind in progress..."
+    Show-LogWindow
     Update-Buttons
     $timer.Start()
 }
@@ -618,6 +637,7 @@ $saveLogButton.Add_Click({
         if ($dialog.ShowDialog($form) -eq 'OK') { $logText.Text | Set-Content -LiteralPath $dialog.FileName -Encoding UTF8 }
     } catch { Show-UiError $_.Exception.Message } finally { $dialog.Dispose() }
 })
+$showLogButton.Add_Click({ Show-LogWindow })
 $closeButton.Add_Click({ $form.Close() })
 $form.Add_FormClosing({
     param($sender, $eventArgs)
@@ -634,4 +654,4 @@ $form.Add_Shown({
         }
     } catch { Show-UiError $_.Exception.Message }
 })
-try { [void]$form.ShowDialog() } finally { $timer.Dispose(); $form.Dispose() }
+try { [void]$form.ShowDialog() } finally { $script:Ui.Exiting = $true; $timer.Dispose(); $logForm.Dispose(); $form.Dispose() }
