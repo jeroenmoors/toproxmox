@@ -65,9 +65,9 @@ $script:Ui = @{
     PreviewKey = ''; LogDirectory = ''; Engine = $enginePath; PowerShell = $nativePs
     DriverEngine = (Join-Path $driverRoot 'Install-VirtioDrivers.ps1')
     DriverInstaller = $driverInstallerPath; DriverManifest = $driverManifestPath
-    RebootRequired = $false; BootCheckedService = ''
+    RebootRequired = $false; Batch = $false; Queue = $null
     BootEngine = (Join-Path $driverRoot 'Prepare-VirtioBoot.ps1')
-    StorageEngine = (Join-Path $driverRoot 'Register-VirtioStorage.ps1'); StorageCheckedService = ''
+    StorageEngine = (Join-Path $driverRoot 'Register-VirtioStorage.ps1')
 }
 
 function New-Label([string]$Text) {
@@ -101,23 +101,25 @@ function Update-Buttons {
     $tabs.Enabled = -not $busy
     $closeButton.Enabled = -not $busy
     $saveLogButton.Enabled = -not $busy -and $logText.TextLength -gt 0
-    $previewButton.Enabled = -not $busy -and -not $script:Ui.RebootRequired -and $null -ne $sourceCombo.SelectedItem -and $null -ne $targetCombo.SelectedItem
+    $reboot = $script:Ui.RebootRequired
+    $installerPresent = Test-Path -LiteralPath $script:Ui.DriverInstaller -PathType Leaf
+    # Pre-migration: per-task buttons and the combined "Prepare host" button.
+    $installDriversButton.Enabled = -not $busy -and -not $reboot -and $installerPresent
+    $registerStorageButton.Enabled = -not $busy -and -not $reboot
+    $prepareBootButton.Enabled = -not $busy -and -not $reboot
+    $saveConfigButton.Enabled = -not $busy
+    $anyTask = $cbInstall.Checked -or $cbRegister.Checked -or $cbBoot.Checked -or $cbSave.Checked
+    $prepareHostButton.Enabled = -not $busy -and -not $reboot -and $anyTask
+    # Post-migration: restore controls.
+    $previewButton.Enabled = -not $busy -and $null -ne $sourceCombo.SelectedItem -and $null -ne $targetCombo.SelectedItem
     $restoreButton.Enabled = $previewButton.Enabled -and -not [string]::IsNullOrWhiteSpace($script:Ui.PreviewKey)
-    $checkBootButton.Enabled = -not $busy
-    $prepareBootButton.Enabled = -not $busy -and -not $script:Ui.RebootRequired -and
-        $script:Ui.BootCheckedService -eq $bootServiceCombo.SelectedItem.Service
-    $checkStorageButton.Enabled = -not $busy -and -not $script:Ui.RebootRequired
-    $registerStorageButton.Enabled = -not $busy -and -not $script:Ui.RebootRequired -and
-        $script:Ui.StorageCheckedService -eq $storageServiceCombo.SelectedItem.Service
-    $installDriversButton.Enabled = -not $busy -and -not $script:Ui.RebootRequired -and
-        (Test-Path -LiteralPath $script:Ui.DriverInstaller -PathType Leaf)
 }
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "ToProxmox v$appVersion | Windows migration"
 $form.StartPosition = 'CenterScreen'
-$form.ClientSize = New-Object System.Drawing.Size(980, 730)
-$form.MinimumSize = New-Object System.Drawing.Size(860, 680)
+$form.ClientSize = New-Object System.Drawing.Size(980, 860)
+$form.MinimumSize = New-Object System.Drawing.Size(860, 780)
 $form.Font = New-Object System.Drawing.Font('Segoe UI', 10)
 $form.AutoScaleDimensions = New-Object System.Drawing.SizeF(96, 96)
 $form.AutoScaleMode = 'Dpi'
@@ -132,7 +134,7 @@ $root.AutoScroll = $true
 # 42px rows clipped the second intro line even at the normal desktop scale.
 [void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
 [void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
-[void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Absolute', 360)))
+[void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Absolute', 300)))
 [void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
 [void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Percent', 100)))
 [void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
@@ -146,145 +148,125 @@ $root.Controls.Add($intro, 0, 1)
 
 $tabs = New-Object System.Windows.Forms.TabControl
 $tabs.Dock = 'Fill'
-$exportTab = New-Object System.Windows.Forms.TabPage('Save network config')
-$restoreTab = New-Object System.Windows.Forms.TabPage('Restore network config')
-$driversTab = New-Object System.Windows.Forms.TabPage('Install drivers')
-$storageTab = New-Object System.Windows.Forms.TabPage('Register storage device')
-$bootTab = New-Object System.Windows.Forms.TabPage('Boot preparation')
-$tabs.TabPages.AddRange(@($driversTab, $storageTab, $bootTab, $exportTab, $restoreTab))
+$preTab = New-Object System.Windows.Forms.TabPage('Pre migration')
+$postTab = New-Object System.Windows.Forms.TabPage('Post migration')
+$tabs.TabPages.AddRange(@($preTab, $postTab))
 $root.Controls.Add($tabs, 0, 2)
 
-$exportLayout = New-Object System.Windows.Forms.TableLayoutPanel
-$exportLayout.Dock = 'Fill'; $exportLayout.Padding = New-Object System.Windows.Forms.Padding(10)
-$exportLayout.ColumnCount = 1; $exportLayout.RowCount = 4
-[void]$exportLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Percent', 100)))
-[void]$exportLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
-[void]$exportLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Percent', 100)))
-[void]$exportLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
-[void]$exportLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
-$exportTab.Controls.Add($exportLayout)
-$exportLayout.Controls.Add((New-Label 'Save all ordinary network adapters while the VM is still running on VMware. Choose a new JSON file; existing exports are never overwritten.'), 0, 0)
-$adapterText = New-ReadOnlyText
-$adapterText.Font = New-Object System.Drawing.Font('Consolas', 10)
-$exportLayout.Controls.Add($adapterText, 0, 1)
-$exportActions = New-Object System.Windows.Forms.FlowLayoutPanel
-$exportActions.AutoSize = $true; $exportActions.AutoSizeMode = 'GrowAndShrink'; $exportActions.Dock = 'Fill'
-$refreshButton = New-Button 'Refresh adapters'
-$exportButton = New-Button 'Save configuration...' 220
-$exportActions.Controls.AddRange(@($refreshButton, $exportButton))
-$exportLayout.Controls.Add($exportActions, 0, 2)
-$exportLayout.Controls.Add((New-Label 'Keep a copy of the export outside the VM as well. After migration, do not replace the original export with a new one.'), 0, 3)
+# --- Pre migration tab -------------------------------------------------------
+$preLayout = New-Object System.Windows.Forms.TableLayoutPanel
+$preLayout.Dock = 'Fill'; $preLayout.Padding = New-Object System.Windows.Forms.Padding(10)
+$preLayout.ColumnCount = 2; $preLayout.RowCount = 8; $preLayout.AutoScroll = $true
+[void]$preLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Percent', 100)))
+[void]$preLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('AutoSize')))
+for ($row = 0; $row -lt 8; $row++) { [void]$preLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize'))) }
+$preTab.Controls.Add($preLayout)
 
-$restoreLayout = New-Object System.Windows.Forms.TableLayoutPanel
-$restoreLayout.Dock = 'Fill'; $restoreLayout.Padding = New-Object System.Windows.Forms.Padding(10)
-$restoreLayout.ColumnCount = 3; $restoreLayout.RowCount = 6
-[void]$restoreLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Absolute', 145)))
-[void]$restoreLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Percent', 100)))
-[void]$restoreLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Absolute', 174)))
-for ($row = 0; $row -lt 3; $row++) { [void]$restoreLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize'))) }
-[void]$restoreLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Percent', 100)))
-[void]$restoreLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
-[void]$restoreLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
-$restoreTab.Controls.Add($restoreLayout)
-$restoreLayout.Controls.Add((New-Label 'Source file'), 0, 0)
-$pathText = New-Object System.Windows.Forms.TextBox
-$pathText.ReadOnly = $true; $pathText.Dock = 'Fill'
-$restoreLayout.Controls.Add($pathText, 1, 0)
-$openButton = New-Button 'Open export...' 160
-$restoreLayout.Controls.Add($openButton, 2, 0)
-$restoreLayout.Controls.Add((New-Label 'Old adapter'), 0, 1)
-$sourceCombo = New-Object System.Windows.Forms.ComboBox
-$sourceCombo.Dock = 'Fill'; $sourceCombo.DropDownStyle = 'DropDownList'; $sourceCombo.DisplayMember = 'Label'
-$restoreLayout.Controls.Add($sourceCombo, 1, 1); $restoreLayout.SetColumnSpan($sourceCombo, 2)
-$restoreLayout.Controls.Add((New-Label 'New adapter'), 0, 2)
-$targetCombo = New-Object System.Windows.Forms.ComboBox
-$targetCombo.Dock = 'Fill'; $targetCombo.DropDownStyle = 'DropDownList'; $targetCombo.DisplayMember = 'Label'
-$restoreLayout.Controls.Add($targetCombo, 1, 2); $restoreLayout.SetColumnSpan($targetCombo, 2)
-$detailsText = New-ReadOnlyText
-$restoreLayout.Controls.Add($detailsText, 0, 3); $restoreLayout.SetColumnSpan($detailsText, 3)
-$removeCheck = New-Object System.Windows.Forms.CheckBox
-$removeCheck.Text = 'Remove absent old adapter (only the exact adapter recorded in this export)'
-$removeCheck.AutoSize = $true; $removeCheck.Dock = 'Fill'; $removeCheck.Checked = $false
-$restoreLayout.Controls.Add($removeCheck, 0, 4); $restoreLayout.SetColumnSpan($removeCheck, 3)
-$restoreActions = New-Object System.Windows.Forms.FlowLayoutPanel
-$restoreActions.AutoSize = $true; $restoreActions.AutoSizeMode = 'GrowAndShrink'; $restoreActions.Dock = 'Fill'
-$previewButton = New-Button '1. Dry run (no changes)' 260
-$restoreButton = New-Button '2. Restore configuration' 240
-$previewButton.Enabled = $false; $restoreButton.Enabled = $false
-$restoreActions.Controls.AddRange(@($previewButton, $restoreButton))
-$restoreLayout.Controls.Add($restoreActions, 0, 5); $restoreLayout.SetColumnSpan($restoreActions, 3)
+$preIntro = New-Label 'Prepare this VMware guest for Proxmox. All tasks are selected by default. "Prepare host" runs the selected tasks in order; each task also has its own button. Use the VM console: networking may be interrupted.'
+$preLayout.Controls.Add($preIntro, 0, 0); $preLayout.SetColumnSpan($preIntro, 2)
 
-$driversLayout = New-Object System.Windows.Forms.TableLayoutPanel
-$driversLayout.Dock = 'Fill'; $driversLayout.Padding = New-Object System.Windows.Forms.Padding(10)
-$driversLayout.ColumnCount = 1; $driversLayout.RowCount = 5; $driversLayout.AutoScroll = $true
-[void]$driversLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Percent', 100)))
-for ($row = 0; $row -lt 5; $row++) { [void]$driversLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize'))) }
-$driversTab.Controls.Add($driversLayout)
-$driversLayout.Controls.Add((New-Label 'Install VirtIO drivers and guest agents for Proxmox. Export your network settings first. You can open setup before migration or after booting the migrated VM.'), 0, 0)
-$driversLayout.Controls.Add((New-Label 'Use the VM console: driver installation may interrupt networking. Setup runs unattended with a progress window; no input is needed. Restart Windows if requested.'), 0, 1)
-$driversLayout.Controls.Add((New-Label 'After installation and any required restart, open Register storage device if Boot preparation reports the storage service is missing, then check the storage driver before shutting down for migration.'), 0, 2)
+$controllerPanel = New-Object System.Windows.Forms.FlowLayoutPanel
+$controllerPanel.AutoSize = $true; $controllerPanel.AutoSizeMode = 'GrowAndShrink'; $controllerPanel.Dock = 'Fill'; $controllerPanel.WrapContents = $false
+$controllerLabel = New-Object System.Windows.Forms.Label
+$controllerLabel.Text = 'Boot disk controller:'; $controllerLabel.AutoSize = $true
+$controllerLabel.Margin = New-Object System.Windows.Forms.Padding(4, 10, 4, 6)
+$controllerCombo = New-Object System.Windows.Forms.ComboBox
+$controllerCombo.DropDownStyle = 'DropDownList'; $controllerCombo.DisplayMember = 'Label'; $controllerCombo.Width = 360
+[void]$controllerCombo.Items.Add([PSCustomObject]@{ Label = 'VirtIO SCSI / VirtIO SCSI single (vioscsi)'; Service = 'vioscsi' })
+[void]$controllerCombo.Items.Add([PSCustomObject]@{ Label = 'VirtIO Block (viostor)'; Service = 'viostor' })
+$controllerCombo.SelectedIndex = 0
+$controllerPanel.Controls.AddRange(@($controllerLabel, $controllerCombo))
+$preLayout.Controls.Add($controllerPanel, 0, 1); $preLayout.SetColumnSpan($controllerPanel, 2)
+
+$cbInstall = New-Object System.Windows.Forms.CheckBox
+$cbInstall.Text = 'Install VirtIO drivers (unattended)'; $cbInstall.AutoSize = $true; $cbInstall.Checked = $true; $cbInstall.Dock = 'Fill'
+$cbInstall.Margin = New-Object System.Windows.Forms.Padding(4, 10, 4, 8)
+$installDriversButton = New-Button 'Install now' 150
+$preLayout.Controls.Add($cbInstall, 0, 2); $preLayout.Controls.Add($installDriversButton, 1, 2)
+
+$cbRegister = New-Object System.Windows.Forms.CheckBox
+$cbRegister.Text = 'Register storage driver (needed on VMware so the service exists)'; $cbRegister.AutoSize = $true; $cbRegister.Checked = $true; $cbRegister.Dock = 'Fill'
+$cbRegister.Margin = New-Object System.Windows.Forms.Padding(4, 10, 4, 8)
+$registerStorageButton = New-Button 'Register now' 150
+$preLayout.Controls.Add($cbRegister, 0, 3); $preLayout.Controls.Add($registerStorageButton, 1, 3)
+
+$cbBoot = New-Object System.Windows.Forms.CheckBox
+$cbBoot.Text = 'Boot preparation (enable Boot Start for the selected controller)'; $cbBoot.AutoSize = $true; $cbBoot.Checked = $true; $cbBoot.Dock = 'Fill'
+$cbBoot.Margin = New-Object System.Windows.Forms.Padding(4, 10, 4, 8)
+$prepareBootButton = New-Button 'Prepare now' 150
+$preLayout.Controls.Add($cbBoot, 0, 4); $preLayout.Controls.Add($prepareBootButton, 1, 4)
+
+$cbSave = New-Object System.Windows.Forms.CheckBox
+$cbSave.Text = 'Save network configuration to the Desktop'; $cbSave.AutoSize = $true; $cbSave.Checked = $true; $cbSave.Dock = 'Fill'
+$cbSave.Margin = New-Object System.Windows.Forms.Padding(4, 10, 4, 8)
+$saveConfigButton = New-Button 'Save now' 150
+$preLayout.Controls.Add($cbSave, 0, 5); $preLayout.Controls.Add($saveConfigButton, 1, 5)
+
+$prepareHostButton = New-Button 'Prepare host' 220
+$prepareHostButton.Font = New-Object System.Drawing.Font('Segoe UI', 11, [Drawing.FontStyle]::Bold)
+$preLayout.Controls.Add($prepareHostButton, 0, 6); $preLayout.SetColumnSpan($prepareHostButton, 2)
+
 $driverStatusLabel = New-Label ''
 if (Test-Path -LiteralPath $script:Ui.DriverInstaller -PathType Leaf) {
     $driverStatusLabel.Text = "VirtIO Guest Tools $($driverManifest.Version) available. No installer download is needed on this VM."
 } else {
-    $driverStatusLabel.Text = 'Driver installer not included. Build or download a package with drivers using: .\build.ps1 package'
+    $driverStatusLabel.Text = 'Driver installer not included; install is disabled. Build a package with drivers using: .\build.ps1 package'
+    $cbInstall.Checked = $false; $cbInstall.Enabled = $false
 }
-$driversLayout.Controls.Add($driverStatusLabel, 0, 3)
-$installDriversButton = New-Button 'Install VirtIO drivers...' 240
-$driversLayout.Controls.Add($installDriversButton, 0, 4)
+$preLayout.Controls.Add($driverStatusLabel, 0, 7); $preLayout.SetColumnSpan($driverStatusLabel, 2)
 
-$storageLayout = New-Object System.Windows.Forms.TableLayoutPanel
-$storageLayout.Dock = 'Fill'; $storageLayout.Padding = New-Object System.Windows.Forms.Padding(10)
-$storageLayout.ColumnCount = 1; $storageLayout.RowCount = 5; $storageLayout.AutoScroll = $true
-[void]$storageLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Percent', 100)))
-for ($row = 0; $row -lt 5; $row++) { [void]$storageLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize'))) }
-$storageTab.Controls.Add($storageLayout)
-$storageLayout.Controls.Add((New-Label 'On VMware the VirtIO controller is absent, so the installer only stages the storage driver without creating its service. Register the device here after installing the drivers, then use Boot preparation.'), 0, 0)
-$storageLayout.Controls.Add((New-Label 'This mirrors the "Add legacy hardware" wizard: it creates a device for the staged driver and registers its service. It creates no partition or data changes. Only run it when Boot preparation reports the service is missing.'), 0, 1)
-$storageServiceCombo = New-Object System.Windows.Forms.ComboBox
-$storageServiceCombo.Dock = 'Fill'; $storageServiceCombo.DropDownStyle = 'DropDownList'; $storageServiceCombo.DisplayMember = 'Label'
-[void]$storageServiceCombo.Items.Add([PSCustomObject]@{ Label = 'VirtIO SCSI / VirtIO SCSI single (vioscsi)'; Service = 'vioscsi' })
-[void]$storageServiceCombo.Items.Add([PSCustomObject]@{ Label = 'VirtIO Block (viostor)'; Service = 'viostor' })
-$storageServiceCombo.SelectedIndex = 0
-$storageLayout.Controls.Add($storageServiceCombo, 0, 2)
-$storageActions = New-Object System.Windows.Forms.FlowLayoutPanel
-$storageActions.AutoSize = $true; $storageActions.Dock = 'Fill'
-$checkStorageButton = New-Button '1. Check storage driver' 220
-$registerStorageButton = New-Button '2. Register storage device...' 260
-$registerStorageButton.Enabled = $false
-$storageActions.Controls.AddRange(@($checkStorageButton, $registerStorageButton))
-$storageLayout.Controls.Add($storageActions, 0, 3)
-$storageStatusLabel = New-Label 'Check first. Registration is only needed when the storage service is missing. After registering, continue with Boot preparation.'
-$storageLayout.Controls.Add($storageStatusLabel, 0, 4)
+# --- Post migration tab ------------------------------------------------------
+$restoreLayout = New-Object System.Windows.Forms.TableLayoutPanel
+$restoreLayout.Dock = 'Fill'; $restoreLayout.Padding = New-Object System.Windows.Forms.Padding(10)
+$restoreLayout.ColumnCount = 3; $restoreLayout.RowCount = 7
+[void]$restoreLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Absolute', 145)))
+[void]$restoreLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Percent', 100)))
+[void]$restoreLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Absolute', 200)))
+for ($row = 0; $row -lt 4; $row++) { [void]$restoreLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize'))) }
+[void]$restoreLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Percent', 100)))
+[void]$restoreLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
+[void]$restoreLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
+$postTab.Controls.Add($restoreLayout)
+$postIntro = New-Label 'Restore the saved network configuration after migration. An export found on the Desktop is loaded automatically; use "Load different config..." for another file. Select the old adapter and the matching new adapter, run a dry run, then restore.'
+$restoreLayout.Controls.Add($postIntro, 0, 0); $restoreLayout.SetColumnSpan($postIntro, 3)
+$restoreLayout.Controls.Add((New-Label 'Source file'), 0, 1)
+$pathText = New-Object System.Windows.Forms.TextBox
+$pathText.ReadOnly = $true; $pathText.Dock = 'Fill'
+$restoreLayout.Controls.Add($pathText, 1, 1)
+$openButton = New-Button 'Load different config...' 190
+$restoreLayout.Controls.Add($openButton, 2, 1)
+$restoreLayout.Controls.Add((New-Label 'Old adapter'), 0, 2)
+$sourceCombo = New-Object System.Windows.Forms.ComboBox
+$sourceCombo.Dock = 'Fill'; $sourceCombo.DropDownStyle = 'DropDownList'; $sourceCombo.DisplayMember = 'Label'
+$restoreLayout.Controls.Add($sourceCombo, 1, 2); $restoreLayout.SetColumnSpan($sourceCombo, 2)
+$restoreLayout.Controls.Add((New-Label 'New adapter'), 0, 3)
+$targetCombo = New-Object System.Windows.Forms.ComboBox
+$targetCombo.Dock = 'Fill'; $targetCombo.DropDownStyle = 'DropDownList'; $targetCombo.DisplayMember = 'Label'
+$restoreLayout.Controls.Add($targetCombo, 1, 3); $restoreLayout.SetColumnSpan($targetCombo, 2)
+$detailsText = New-ReadOnlyText
+$restoreLayout.Controls.Add($detailsText, 0, 4); $restoreLayout.SetColumnSpan($detailsText, 3)
+$removeCheck = New-Object System.Windows.Forms.CheckBox
+$removeCheck.Text = 'Remove absent old adapter (only the exact adapter recorded in this export)'
+$removeCheck.AutoSize = $true; $removeCheck.Dock = 'Fill'; $removeCheck.Checked = $false
+$restoreLayout.Controls.Add($removeCheck, 0, 5); $restoreLayout.SetColumnSpan($removeCheck, 3)
+$restoreActions = New-Object System.Windows.Forms.FlowLayoutPanel
+$restoreActions.AutoSize = $true; $restoreActions.AutoSizeMode = 'GrowAndShrink'; $restoreActions.Dock = 'Fill'
+$refreshButton = New-Button 'Refresh adapters' 170
+$previewButton = New-Button '1. Dry run (no changes)' 240
+$restoreButton = New-Button '2. Restore configuration' 240
+$previewButton.Enabled = $false; $restoreButton.Enabled = $false
+$restoreActions.Controls.AddRange(@($refreshButton, $previewButton, $restoreButton))
+$restoreLayout.Controls.Add($restoreActions, 0, 6); $restoreLayout.SetColumnSpan($restoreActions, 3)
 
-$bootLayout = New-Object System.Windows.Forms.TableLayoutPanel
-$bootLayout.Dock = 'Fill'; $bootLayout.Padding = New-Object System.Windows.Forms.Padding(10)
-$bootLayout.ColumnCount = 1; $bootLayout.RowCount = 5; $bootLayout.AutoScroll = $true
-[void]$bootLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Percent', 100)))
-for ($row = 0; $row -lt 5; $row++) { [void]$bootLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize'))) }
-$bootTab.Controls.Add($bootLayout)
-$bootLayout.Controls.Add((New-Label 'Before migration: install the drivers, complete any required restart, then choose the controller that will host the Windows boot disk in Proxmox. If preparation reports the service is missing, use Register storage device first.'), 0, 0)
-$bootLayout.Controls.Add((New-Label 'Preparation checks the installed storage driver, saves the original startup values and enables Boot Start. NetKVM keeps its normal network-driver settings. A successful check is not a boot test.'), 0, 1)
-$bootServiceCombo = New-Object System.Windows.Forms.ComboBox
-$bootServiceCombo.Dock = 'Fill'; $bootServiceCombo.DropDownStyle = 'DropDownList'; $bootServiceCombo.DisplayMember = 'Label'
-[void]$bootServiceCombo.Items.Add([PSCustomObject]@{ Label = 'VirtIO SCSI / VirtIO SCSI single (vioscsi)'; Service = 'vioscsi' })
-[void]$bootServiceCombo.Items.Add([PSCustomObject]@{ Label = 'VirtIO Block (viostor)'; Service = 'viostor' })
-$bootServiceCombo.SelectedIndex = 0
-$bootLayout.Controls.Add($bootServiceCombo, 0, 2)
-$bootActions = New-Object System.Windows.Forms.FlowLayoutPanel
-$bootActions.AutoSize = $true; $bootActions.Dock = 'Fill'
-$checkBootButton = New-Button '1. Check boot settings' 220
-$prepareBootButton = New-Button '2. Prepare boot settings...' 250
-$prepareBootButton.Enabled = $false
-$bootActions.Controls.AddRange(@($checkBootButton, $prepareBootButton))
-$bootLayout.Controls.Add($bootActions, 0, 3)
-$bootStatusLabel = New-Label 'Check first. After preparation, shut down for migration. If Windows boots on VMware again, recheck the settings before migrating.'
-$bootLayout.Controls.Add($bootStatusLabel, 0, 4)
+# Current adapters are summarised through the target combo; keep this control
+# for Refresh-Adapters output without occupying tab space.
+$adapterText = New-ReadOnlyText
+$adapterText.Font = New-Object System.Drawing.Font('Consolas', 10)
 
 $root.Controls.Add((New-Label 'IPv4 + default routes. Additional static routes, manual IPv6 and teaming require separate handling.'), 0, 3)
 $logText = New-ReadOnlyText
 $logText.Font = New-Object System.Drawing.Font('Consolas', 9)
-$logText.MinimumSize = New-Object System.Drawing.Size(0, 80)
+$logText.MinimumSize = New-Object System.Drawing.Size(0, 260)
 $logText.WordWrap = $false; $logText.ScrollBars = 'Both'
 $root.Controls.Add($logText, 0, 4)
 $statusLabel = New-Label 'Ready. Viewing settings does not change anything.'
@@ -361,6 +343,39 @@ function Get-SelectionKey {
     return (@($script:Ui.ExportPath, $currentHash, $sourceCombo.SelectedItem.Settings.Alias,
         $choice.Alias, $choice.Guid, [string]$removeCheck.Checked) | ConvertTo-Json -Compress)
 }
+function Get-DesktopExportPath {
+    $desktop = [Environment]::GetFolderPath('Desktop')
+    return (Join-Path $desktop "$env:COMPUTERNAME-network-$(Get-Date -Format yyyyMMdd-HHmmss).json")
+}
+function Find-DesktopExport {
+    try {
+        $desktop = [Environment]::GetFolderPath('Desktop')
+        $files = @(Get-ChildItem -LiteralPath $desktop -Filter '*network*.json' -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -notlike '*before-restore*' } | Sort-Object LastWriteTime -Descending)
+        foreach ($file in $files) {
+            try { Load-Export $file.FullName; return $true } catch { }
+        }
+    } catch { }
+    return $false
+}
+function Invoke-NextQueued {
+    if ($null -eq $script:Ui.Queue -or $script:Ui.Queue.Count -eq 0) {
+        $script:Ui.Batch = $false; $script:Ui.Queue = $null; return
+    }
+    $step = $script:Ui.Queue.Dequeue()
+    Start-Operation -Kind $step.Kind -Parameters $step.Parameters
+}
+function Start-HostPreparation {
+    $queue = New-Object System.Collections.Generic.Queue[object]
+    $service = $controllerCombo.SelectedItem.Service
+    if ($cbInstall.Checked) { $queue.Enqueue(@{ Kind = 'Drivers'; Parameters = @{ InstallerPath = $script:Ui.DriverInstaller; ManifestPath = $script:Ui.DriverManifest } }) }
+    if ($cbRegister.Checked) { $queue.Enqueue(@{ Kind = 'Storage register'; Parameters = @{ Mode = 'Register'; Service = $service } }) }
+    if ($cbBoot.Checked) { $queue.Enqueue(@{ Kind = 'Boot prepare'; Parameters = @{ Mode = 'Prepare'; Service = $service } }) }
+    if ($cbSave.Checked) { $queue.Enqueue(@{ Kind = 'Export'; Parameters = @{ Mode = 'Export'; Path = (Get-DesktopExportPath) } }) }
+    if ($queue.Count -eq 0) { throw 'Select at least one task.' }
+    $script:Ui.Batch = $true; $script:Ui.Queue = $queue
+    Invoke-NextQueued
+}
 function Start-Operation([string]$Kind, [hashtable]$Parameters, [string]$SelectionKey = '') {
     if ($script:Ui.Busy) { return }
     $logRoot = Join-Path $env:ProgramData 'NetworkMigration\Logs'
@@ -368,14 +383,12 @@ function Start-Operation([string]$Kind, [hashtable]$Parameters, [string]$Selecti
     New-Item -ItemType Directory -Path $opDir -Force | Out-Null
     $transcriptPath = Join-Path $opDir 'operation.log'
     $resultPath = Join-Path $opDir 'result.json'
-    if ($Kind -in @('Drivers', 'Boot check', 'Boot prepare', 'Storage register')) { $script:Ui.BootCheckedService = '' }
-    if ($Kind -in @('Drivers', 'Storage check', 'Storage register')) { $script:Ui.StorageCheckedService = '' }
     if ($Kind -eq 'Boot prepare') { $Parameters['BackupDirectory'] = $opDir }
     if ($Kind -eq 'Drivers') { $Parameters['LogPath'] = Join-Path $opDir 'virtio-setup.log' }
     $payload = @{
         Engine = $(if ($Kind -eq 'Drivers') { $script:Ui.DriverEngine }
-            elseif ($Kind -in @('Boot check', 'Boot prepare')) { $script:Ui.BootEngine }
-            elseif ($Kind -in @('Storage check', 'Storage register')) { $script:Ui.StorageEngine }
+            elseif ($Kind -eq 'Boot prepare') { $script:Ui.BootEngine }
+            elseif ($Kind -eq 'Storage register') { $script:Ui.StorageEngine }
             else { $script:Ui.Engine })
         Kind = $Kind; Parameters = $Parameters; Transcript = $transcriptPath
         Result = $resultPath; ExportHash = $(if ($Kind -in @('Dry run', 'Restore')) { $script:Ui.ExportHash } else { '' })
@@ -400,7 +413,7 @@ try {
         $target = @(Get-NetAdapter -Physical | Where-Object { $_.Name -eq $parameters.TargetAlias })
         if ($target.Count -ne 1 -or [string]$target[0].InterfaceGuid -ne $payload.TargetGuid) { throw 'Target adapter changed before execution.' }
     }
-    if ($payload.Kind -in @('Drivers', 'Boot check', 'Boot prepare', 'Storage check', 'Storage register')) {
+    if ($payload.Kind -in @('Drivers', 'Boot prepare', 'Storage register')) {
         $installation = & $payload.Engine @parameters
         $result.RebootRequired = [bool]$installation.RebootRequired
         $result.Message = $installation.Message
@@ -467,79 +480,67 @@ $timer.Add_Tick({
             $driverStatusLabel.Text = $result.Message
             Refresh-Adapters
             $statusLabel.Text = $result.Message
-            if ($script:Ui.RebootRequired) {
+            if ($script:Ui.RebootRequired -and -not $script:Ui.Batch) {
                 [System.Windows.Forms.MessageBox]::Show($form, $result.Message, 'Restart required', 'OK', 'Information') | Out-Null
             }
-        } elseif ($job.Kind -in @('Boot check', 'Boot prepare')) {
-            $bootStatusLabel.Text = $result.Message
+        } elseif ($job.Kind -eq 'Boot prepare') {
+            $driverStatusLabel.Text = $result.Message
             $statusLabel.Text = $result.Message
-            if ($job.Kind -eq 'Boot check' -and $result.CanPrepare) {
-                $script:Ui.BootCheckedService = $job.Parameters.Service
-            }
-        } elseif ($job.Kind -in @('Storage check', 'Storage register')) {
-            $storageStatusLabel.Text = $result.Message
+        } elseif ($job.Kind -eq 'Storage register') {
+            $script:Ui.RebootRequired = [bool]$result.RebootRequired
+            $driverStatusLabel.Text = $result.Message
             $statusLabel.Text = $result.Message
-            if ($job.Kind -eq 'Storage check' -and $result.CanPrepare) {
-                $script:Ui.StorageCheckedService = $job.Parameters.Service
-            }
-            if ($job.Kind -eq 'Storage register') {
-                $script:Ui.RebootRequired = [bool]$result.RebootRequired
-                if ($script:Ui.RebootRequired) {
-                    [System.Windows.Forms.MessageBox]::Show($form, $result.Message, 'Restart required', 'OK', 'Information') | Out-Null
-                }
+            if ($script:Ui.RebootRequired -and -not $script:Ui.Batch) {
+                [System.Windows.Forms.MessageBox]::Show($form, $result.Message, 'Restart required', 'OK', 'Information') | Out-Null
             }
         } elseif ($job.Kind -eq 'Dry run') {
             $script:Ui.PreviewKey = $job.Key
             $statusLabel.Text = 'Dry run succeeded. No settings were changed. You can now restore the configuration.'
         } elseif ($job.Kind -eq 'Export') {
             Load-Export $job.Parameters.Path
-            $statusLabel.Text = 'Export saved: ' + $job.Parameters.Path
+            $driverStatusLabel.Text = 'Network configuration saved to: ' + $job.Parameters.Path
+            $statusLabel.Text = 'Configuration saved to: ' + $job.Parameters.Path
         } else {
             Refresh-Adapters
             $statusLabel.Text = 'Restore completed. Check connectivity, DNS and the network profile; test again after a reboot.'
         }
     } catch {
+        $script:Ui.Batch = $false; $script:Ui.Queue = $null
         Invalidate-Preview
         Show-UiError $_.Exception.Message
     } finally {
         $job.Process.Dispose(); $script:Ui.Job = $null; $script:Ui.Busy = $false
         Update-Buttons
+        if ($script:Ui.Batch) {
+            if ($script:Ui.RebootRequired) {
+                $script:Ui.Batch = $false; $script:Ui.Queue = $null
+                $statusLabel.Text = 'Restart required. Reboot Windows, then run Prepare host again for the remaining tasks.'
+                [System.Windows.Forms.MessageBox]::Show($form, 'A restart is required before continuing. Reboot Windows, then run Prepare host again.', 'Restart required', 'OK', 'Information') | Out-Null
+            } elseif ($null -ne $script:Ui.Queue -and $script:Ui.Queue.Count -gt 0) {
+                Invoke-NextQueued
+            } else {
+                $script:Ui.Batch = $false; $script:Ui.Queue = $null
+                $statusLabel.Text = 'Host preparation complete. Review the log, then shut down for migration.'
+            }
+        }
     }
 })
 
-$bootServiceCombo.Add_SelectedIndexChanged({
-    $script:Ui.BootCheckedService = ''
-    $bootStatusLabel.Text = 'Controller selection changed. Check boot settings again.'
-    Update-Buttons
-})
-$storageServiceCombo.Add_SelectedIndexChanged({
-    $script:Ui.StorageCheckedService = ''
-    $storageStatusLabel.Text = 'Controller selection changed. Check the storage driver again.'
-    Update-Buttons
-})
-$checkStorageButton.Add_Click({
-    try {
-        Start-Operation -Kind 'Storage check' -Parameters @{ Mode = 'Check'; Service = $storageServiceCombo.SelectedItem.Service }
-    } catch { Show-UiError $_.Exception.Message; Update-Buttons }
-})
+$cbInstall.Add_CheckedChanged({ Update-Buttons })
+$cbRegister.Add_CheckedChanged({ Update-Buttons })
+$cbBoot.Add_CheckedChanged({ Update-Buttons })
+$cbSave.Add_CheckedChanged({ Update-Buttons })
 $registerStorageButton.Add_Click({
     try {
-        $service = $storageServiceCombo.SelectedItem.Service
-        if ($script:Ui.StorageCheckedService -ne $service) { throw 'Check the selected storage driver first.' }
+        $service = $controllerCombo.SelectedItem.Service
         $message = "Register a $service storage device? This mirrors the Add legacy hardware wizard: it creates a device for the staged VirtIO driver and registers its service so the migrated VM can boot. It does not change partitions or data. Keep a VM backup and console access. Continue?"
         if ([System.Windows.Forms.MessageBox]::Show($form, $message, 'Register storage device', 'YesNo', 'Warning', 'Button2') -ne 'Yes') { return }
         Start-Operation -Kind 'Storage register' -Parameters @{ Mode = 'Register'; Service = $service }
     } catch { Show-UiError $_.Exception.Message; Update-Buttons }
 })
-$checkBootButton.Add_Click({
-    try {
-        Start-Operation -Kind 'Boot check' -Parameters @{ Mode = 'Check'; Service = $bootServiceCombo.SelectedItem.Service }
-    } catch { Show-UiError $_.Exception.Message; Update-Buttons }
-})
 $prepareBootButton.Add_Click({
     try {
-        $service = $bootServiceCombo.SelectedItem.Service
-        if ($script:Ui.BootCheckedService -ne $service) { throw 'Check the selected storage driver first.' }
+        $service = $controllerCombo.SelectedItem.Service
         $message = "Prepare $service for the Windows boot disk? The tool will back up the original values and set Start and any existing StartOverride value named 0 to Boot Start. Keep a VM backup and console access. After preparation, shut down for migration. This does not guarantee a successful boot on different hardware."
         if ([System.Windows.Forms.MessageBox]::Show($form, $message, 'Prepare storage boot driver', 'YesNo', 'Warning', 'Button2') -ne 'Yes') { return }
         Start-Operation -Kind 'Boot prepare' -Parameters @{ Mode = 'Prepare'; Service = $service }
@@ -547,29 +548,38 @@ $prepareBootButton.Add_Click({
 })
 $installDriversButton.Add_Click({
     try {
-        $message = 'Install VirtIO Guest Tools unattended? It installs the default drivers and guest agents, including QEMU Guest Agent and SPICE components, and accepts the license automatically. A progress window appears; no input is needed. Export your network settings first and use the VM console. Networking may be interrupted. Automatic restarts are suppressed.'
+        $message = 'Install VirtIO Guest Tools unattended? It installs the default drivers and guest agents, including QEMU Guest Agent and SPICE components, and accepts the license automatically. A progress window appears; no input is needed. Save your network settings first and use the VM console. Networking may be interrupted. Automatic restarts are suppressed.'
         if ([System.Windows.Forms.MessageBox]::Show($form, $message, 'Install VirtIO drivers', 'YesNo', 'Warning', 'Button2') -ne 'Yes') { return }
         Start-Operation -Kind 'Drivers' -Parameters @{
             InstallerPath = $script:Ui.DriverInstaller; ManifestPath = $script:Ui.DriverManifest
         }
     } catch { Show-UiError $_.Exception.Message; Update-Buttons }
 })
-$refreshButton.Add_Click({ try { Refresh-Adapters } catch { Show-UiError $_.Exception.Message } })
-$exportButton.Add_Click({
-    $dialog = New-Object System.Windows.Forms.SaveFileDialog
+$saveConfigButton.Add_Click({
     try {
-        $dialog.Filter = 'Network export (*.json)|*.json'; $dialog.DefaultExt = 'json'; $dialog.AddExtension = $true
-        $dialog.FileName = "$env:COMPUTERNAME-network-$(Get-Date -Format yyyyMMdd-HHmmss).json"
-        if (Test-Path -LiteralPath 'C:\Migration') { $dialog.InitialDirectory = 'C:\Migration' }
-        if ($dialog.ShowDialog($form) -ne 'OK') { return }
-        if (Test-Path -LiteralPath $dialog.FileName) { throw 'This file already exists. Choose a new file name.' }
-        Start-Operation -Kind 'Export' -Parameters @{ Mode = 'Export'; Path = $dialog.FileName }
-    } catch { Show-UiError $_.Exception.Message } finally { $dialog.Dispose() }
+        $path = Get-DesktopExportPath
+        Start-Operation -Kind 'Export' -Parameters @{ Mode = 'Export'; Path = $path }
+    } catch { Show-UiError $_.Exception.Message; Update-Buttons }
 })
+$prepareHostButton.Add_Click({
+    try {
+        $tasks = @()
+        if ($cbInstall.Checked) { $tasks += 'install VirtIO drivers' }
+        if ($cbRegister.Checked) { $tasks += 'register the storage driver' }
+        if ($cbBoot.Checked) { $tasks += 'prepare boot settings' }
+        if ($cbSave.Checked) { $tasks += 'save the network configuration to the Desktop' }
+        if ($tasks.Count -eq 0) { throw 'Select at least one task.' }
+        $message = "Prepare this host for Proxmox? The selected tasks run in order without further prompts:`r`n`r`n - " + ($tasks -join "`r`n - ") + "`r`n`r`nUse the VM console; networking may be interrupted. Keep a VM backup. If a restart is required the remaining tasks stop until you reboot."
+        if ([System.Windows.Forms.MessageBox]::Show($form, $message, 'Prepare host', 'YesNo', 'Warning', 'Button2') -ne 'Yes') { return }
+        Start-HostPreparation
+    } catch { Show-UiError $_.Exception.Message; Update-Buttons }
+})
+$refreshButton.Add_Click({ try { Refresh-Adapters } catch { Show-UiError $_.Exception.Message } })
 $openButton.Add_Click({
     $dialog = New-Object System.Windows.Forms.OpenFileDialog
     try {
         $dialog.Filter = 'Network export (*.json)|*.json'; $dialog.CheckFileExists = $true
+        $dialog.InitialDirectory = [Environment]::GetFolderPath('Desktop')
         if (Test-Path -LiteralPath 'C:\Migration') { $dialog.InitialDirectory = 'C:\Migration' }
         if ($dialog.ShowDialog($form) -eq 'OK') { Load-Export $dialog.FileName }
     } catch { Show-UiError $_.Exception.Message } finally { $dialog.Dispose(); Update-Buttons }
@@ -616,5 +626,12 @@ $form.Add_FormClosing({
         [System.Windows.Forms.MessageBox]::Show($form, 'An operation is still running. Wait for the result before closing.', 'Network migration') | Out-Null
     }
 })
-$form.Add_Shown({ try { Refresh-Adapters } catch { Show-UiError $_.Exception.Message } })
+$form.Add_Shown({
+    try {
+        Refresh-Adapters
+        if (Find-DesktopExport) {
+            $statusLabel.Text = 'Loaded network export from the Desktop: ' + $script:Ui.ExportPath
+        }
+    } catch { Show-UiError $_.Exception.Message }
+})
 try { [void]$form.ShowDialog() } finally { $timer.Dispose(); $form.Dispose() }

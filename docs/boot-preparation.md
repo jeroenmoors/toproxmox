@@ -36,8 +36,8 @@ Repair the installation or use the compatible-controller migration procedure bel
 On VMware the VirtIO controller is absent, so the Guest Tools installer stages the
 `vioscsi`/`viostor` package without creating its kernel service. Boot preparation
 then reports that the driver service is missing. Register the device first with the
-**Register storage device** step, which recreates the service from the staged
-package, then return here to check and prepare. See
+**Register storage driver** task on the **Pre migration** tab (its **Register now**
+button, or as part of **Prepare host**), then check and prepare. See
 [registering the storage device](drivers.md#registering-the-storage-device-on-vmware).
 
 ## Why NetKVM is not changed

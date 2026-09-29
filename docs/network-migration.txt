@@ -13,16 +13,18 @@ From a source checkout, use .\src\ToProxmox.ps1 instead. See README.md for build
 instructions. The package automatically extracts and cleans up its runtime files.
 
 BEFORE MIGRATION (ON VMWARE)
-- On the 'Save network config' tab, review the detected adapters.
-- Click 'Save configuration...' and choose a new JSON file.
+- On the 'Pre migration' tab, review the detected adapters and pick the boot disk controller.
+- Leave 'Save network configuration to the Desktop' selected; click 'Prepare host'
+  (or the 'Save now' button) to write a timestamped JSON export to the Desktop.
 - Keep a copy of this export outside the VM as well.
-- Install VirtIO drivers, complete any required restart, then use Boot preparation
-  for the selected storage controller before shutting down (see boot-preparation.md).
+- 'Prepare host' also installs the VirtIO drivers, registers the storage driver and
+  runs Boot preparation for the selected controller before shutting down
+  (see drivers.md and boot-preparation.md).
 
 AFTER MIGRATION (THROUGH THE PROXMOX CONSOLE)
-- Use the Install drivers tab to install the new NIC driver if needed (see drivers.md).
 - Restart if setup requests it, and verify that the VLAN/bridge is correct.
-- On the 'Restore network config' tab, open the original JSON file.
+- On the 'Post migration' tab, the export found on the Desktop is loaded
+  automatically; use 'Load different config...' for another file.
 - Select the old adapter from the export and the correct new adapter. When there
   are multiple adapters, the first is not selected automatically; check MAC and VLAN.
 - Optionally select 'Remove absent old adapter'.

@@ -75,44 +75,33 @@ history. For shallow clones, run `git fetch --unshallow`; CI fetches full histor
 A source checkout resolves its version at startup, or shows an explicit development
 label if Git metadata is unavailable. No commit hooks or manual version bumps are needed.
 
-## Installing VirtIO drivers
+## Preparing the host (Pre migration)
 
-Open **Install drivers**, click **Install VirtIO drivers...**, and confirm. Setup
-runs unattended with a visible progress window; no input is needed. Export your
-network settings first and use the VM console. The bundle installs the default
-drivers and guest agents; automatic restarts are suppressed, and the tool reports
-when Windows needs a restart.
+Open the **Pre migration** tab. It lists four tasks, all selected by default:
+
+- **Install VirtIO drivers** – runs the bundled Guest Tools installer unattended
+  (progress window, no input); the default drivers and guest agents are installed
+  and automatic restarts are suppressed.
+- **Register storage driver** – on VMware the installer only stages the storage
+  driver without creating its service; this creates a root-enumerated device so the
+  `vioscsi`/`viostor` service exists.
+- **Boot preparation** – backs up the original startup values and enables Boot
+  Start for the selected controller. NetKVM keeps its normal network settings.
+- **Save network configuration to the Desktop** – exports the IPv4 settings to a
+  timestamped JSON file on the current user's Desktop.
+
+Pick the **boot disk controller** (VirtIO SCSI `vioscsi` or VirtIO Block
+`viostor`), then click **Prepare host** to run the selected tasks in order without
+further prompts. Each task also has its own button to run just that step. Use the
+VM console: networking may be interrupted. If a restart is required, the remaining
+tasks stop until you reboot and run **Prepare host** again.
 
 The driver integration targets x86/x64 Windows 10/11 and Server 2016 or newer.
 Installing drivers alone does not guarantee booting from a new storage controller.
-See the [driver guide](docs/drivers.md) for migration steps, offline builds, version
-pinning, and [third-party components](docs/THIRD-PARTY.md).
-
-## Registering the storage device
-
-On VMware the VirtIO controller is absent, so the Guest Tools installer stages the
-`vioscsi`/`viostor` package without creating its kernel service. Boot preparation
-then reports that the driver service is missing. Open **Register storage device**,
-select **VirtIO SCSI** (`vioscsi`) or **VirtIO Block** (`viostor`), check, and
-register. This mirrors the **Add legacy hardware** wizard: it creates a
-root-enumerated device for the driver's hardware ID and force-installs the staged
-package so the service is created. Run this only when boot preparation reports a
-missing service; if the service already exists, this step is not needed.
-
-See [boot preparation](docs/boot-preparation.md) for the full flow and CLI usage.
-
-## Preparing the boot driver before migration
-
-After installing the drivers and completing any requested restart, open **Boot
-preparation**. Select **VirtIO SCSI** (`vioscsi`) or **VirtIO Block** (`viostor`),
-check the current settings, then prepare them before shutting down for migration.
-The tool verifies the installed service and driver file, backs up the original
-values, and sets storage Boot Start and any existing `StartOverride\0` as needed.
-NetKVM retains its normal network-driver startup settings.
-
-See [boot preparation](docs/boot-preparation.md) for CLI dry runs, backups,
-limitations, and the compatible-controller fallback. A successful configuration
-check is not a successful boot test.
+See the [driver guide](docs/drivers.md) and [boot preparation](docs/boot-preparation.md)
+for migration steps, offline builds, version pinning, CLI usage, backups, and
+[third-party components](docs/THIRD-PARTY.md). A successful configuration check is
+not a successful boot test.
 
 ## Development
 
@@ -144,12 +133,16 @@ interface, install drivers, or change network settings. GitHub Actions runs thes
 5.1 and PowerShell 7, checks the CMD launcher using harmless payloads on Windows,
 and saves the package as a build artifact. Windows process tests are skipped on Linux.
 
-## Migrating network settings
+## Restoring the network (Post migration)
 
-1. Export the network settings before migration; keep a copy of the JSON file outside the VM.
-2. After migration, open ToProxmox through the Proxmox console and use its driver tab to install the target NIC driver if needed.
-3. Open the original export, explicitly select the source and target adapters, and perform a dry run.
-4. Confirm the restore and verify network connectivity and applications, including after a reboot.
+1. Before migration, use **Prepare host** (or its **Save now** button) to save the
+   network settings to the Desktop; keep a copy of the JSON file outside the VM too.
+2. After migration, open ToProxmox through the Proxmox console. The **Post
+   migration** tab automatically loads an export found on the Desktop; use **Load
+   different config...** for another file.
+3. Explicitly select the old and new adapters and perform a dry run.
+4. Confirm the restore and verify network connectivity and applications, including
+   after a reboot.
 
 The current backend supports ordinary IPv4 adapters. Additional static routes and
 manual IPv6 settings block restoration. NIC teaming and VLAN driver settings are

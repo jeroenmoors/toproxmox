@@ -1,6 +1,6 @@
 # VirtIO drivers and guest tools
 
-ToProxmox can open the upstream VirtIO Guest Tools installer from its **Install drivers** tab. The complete installer is carried inside the ToProxmox CMD package;
+ToProxmox can open the upstream VirtIO Guest Tools installer from its **Pre migration** tab. The complete installer is carried inside the ToProxmox CMD package;
 the VM does not need a network connection to download it.
 
 The bundle includes VirtIO drivers and guest agents, including QEMU Guest Agent
@@ -49,16 +49,18 @@ make driver setup available during development.
 ## Install on a VM
 
 1. Export the original network settings and keep a copy outside the VM.
-2. Open the VM console and select **Install drivers**.
-3. Click **Install VirtIO drivers...** and confirm. Setup runs unattended with a
-   progress window; no input is needed.
+2. Open the VM console and select the **Pre migration** tab.
+3. Choose the boot disk controller, then click **Prepare host** to run the
+   selected tasks, or use **Install now** to only install the drivers. Setup runs
+   unattended with a progress window; no input is needed.
 4. Restart Windows if setup requests it. ToProxmox reports the reboot requirement
    and blocks network restore, boot preparation writes, and another installation
    for the current session.
-5. Before migration, use [Boot preparation](boot-preparation.md) to check and prepare
-   the selected storage driver, then shut down for migration.
-6. Verify the devices in Device Manager. After migration, select the new network
-   adapter and perform a fresh dry run before restoring its settings.
+5. Before migration, use **Boot preparation** (part of **Prepare host**) to check
+   and prepare the selected storage driver, then shut down for migration.
+6. Verify the devices in Device Manager. After migration, use the **Post
+   migration** tab to select the new network adapter and perform a fresh dry run
+   before restoring its settings.
 
 ## Registering the storage device on VMware
 
@@ -68,18 +70,18 @@ installer stages the driver package into the DriverStore without registering the
 service. [Boot preparation](boot-preparation.md) then reports that the driver
 service is missing and refuses to fabricate one.
 
-Use **Register storage device** to resolve this. It reproduces the **Add legacy
+Use the **Register storage driver** task to resolve this. It reproduces the **Add legacy
 hardware** (`hdwwiz`) flow through the Windows SetupAPI: it creates a
 root-enumerated device for the staged package's hardware ID
 (`PCI\VEN_1AF4&DEV_xxxx`) and force-installs the driver, which creates the kernel
 service. No external tools such as `devcon` are required.
 
 1. Install the VirtIO drivers first, so the package is staged.
-2. Open **Register storage device** and select **VirtIO SCSI** (`vioscsi`) or
-   **VirtIO Block** (`viostor`) to match the intended Proxmox boot controller.
-3. Click **Check** to inspect the staged package and report whether the service
-   already exists, then **Register** to create the device and service.
-4. Continue with [Boot preparation](boot-preparation.md).
+2. On the **Pre migration** tab, select the **boot disk controller** (VirtIO SCSI
+   `vioscsi` or VirtIO Block `viostor`) to match the intended Proxmox controller.
+3. Click **Register now** for just this step, or leave **Register storage driver**
+   selected and run **Prepare host**.
+4. Continue with boot preparation.
 
 The step is idempotent: if the service already exists with a valid registered
 driver binary, no new device is created. If a service exists but its registered
