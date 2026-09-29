@@ -552,7 +552,7 @@ $cbSave.Add_CheckedChanged({ Update-Buttons })
 $registerStorageButton.Add_Click({
     try {
         $service = $controllerCombo.SelectedItem.Service
-        $message = "Register a $service storage device? This mirrors the Add legacy hardware wizard: it creates a device for the staged VirtIO driver and registers its service so the migrated VM can boot. It does not change partitions or data. Keep a VM backup and console access. Continue?"
+        $message = "Register a $service storage device? This mirrors the Add legacy hardware wizard: it force-installs the staged VirtIO driver to create its service, or completes an existing but incomplete one, so the migrated VM can boot. It does not change partitions or data. Keep a VM backup and console access. Continue?"
         if ([System.Windows.Forms.MessageBox]::Show($form, $message, 'Register storage device', 'YesNo', 'Warning', 'Button2') -ne 'Yes') { return }
         Start-Operation -Kind 'Storage register' -Parameters @{ Mode = 'Register'; Service = $service }
     } catch { Show-UiError $_.Exception.Message; Update-Buttons }

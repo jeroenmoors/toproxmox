@@ -97,11 +97,19 @@ try {
     $result = Invoke-VirtioStorageRegistration -Mode Register -Service vioscsi -Confirm:$false
     if ($result.Changed -or -not $result.AlreadyRegistered -or $simulation.Installs -ne 0) { throw 'An already registered service was modified.' }
 
-    # Existing but broken service: blocked, never duplicated.
-    $simulation.State = New-StorageState -Exists $true -FilePresent $false; $simulation.Installs = 0
-    if ((Invoke-VirtioStorageRegistration -Mode Check -Service vioscsi).CanPrepare) { throw 'A broken existing service must block registration.' }
-    Assert-StorageFailure { Invoke-VirtioStorageRegistration -Mode Register -Service vioscsi -Confirm:$false } '*already exists*'
-    if ($simulation.Installs -ne 0) { throw 'A broken service was duplicated.' }
+    # Existing but incomplete service with a staged package: repaired, not duplicated.
+    $simulation.State = New-StorageState -Exists $true -FilePresent $false; $simulation.FindResult = $found
+    $simulation.CreateOnInstall = $true; $simulation.Installs = 0
+    if (-not (Invoke-VirtioStorageRegistration -Mode Check -Service vioscsi).CanPrepare) { throw 'An incomplete service with a staged package should be repairable.' }
+    $simulation.State = New-StorageState -Exists $true -FilePresent $false
+    $result = Invoke-VirtioStorageRegistration -Mode Register -Service vioscsi -Confirm:$false
+    if (-not $result.Changed -or $simulation.Installs -ne 1) { throw 'Repair did not force-install exactly once.' }
+
+    # Existing but incomplete service without a staged package: blocked, no install.
+    $simulation.State = New-StorageState -Exists $true -FilePresent $false; $simulation.FindResult = $null; $simulation.Installs = 0
+    if ((Invoke-VirtioStorageRegistration -Mode Check -Service vioscsi).CanPrepare) { throw 'An incomplete service without a package must block registration.' }
+    Assert-StorageFailure { Invoke-VirtioStorageRegistration -Mode Register -Service vioscsi -Confirm:$false } '*no staged*driver package was found to repair*'
+    if ($simulation.Installs -ne 0) { throw 'A repair without a package installed something.' }
 
     # Missing service + no staged INF: blocked, no install.
     $simulation.State = New-StorageState -Exists $false; $simulation.FindResult = $null; $simulation.Installs = 0
@@ -109,9 +117,9 @@ try {
     Assert-StorageFailure { Invoke-VirtioStorageRegistration -Mode Register -Service vioscsi -Confirm:$false } '*No staged*driver package*'
     if ($simulation.Installs -ne 0) { throw 'A missing package was installed.' }
 
-    # Install ran but the service still does not exist: fail loudly.
+    # Install ran but the service is still incomplete: fail loudly.
     $simulation.FindResult = $found; $simulation.CreateOnInstall = $false; $simulation.State = New-StorageState -Exists $false; $simulation.Installs = 0
-    Assert-StorageFailure { Invoke-VirtioStorageRegistration -Mode Register -Service vioscsi -Confirm:$false } '*service was not created*'
+    Assert-StorageFailure { Invoke-VirtioStorageRegistration -Mode Register -Service vioscsi -Confirm:$false } '*still incomplete*'
     if ($simulation.Installs -ne 1) { throw 'Verification failure should occur after one install attempt.' }
 
     Write-Host 'OK: hardware ID extraction, INF matching/discovery, registration planning, WhatIf, idempotence, blocked states and verification.'

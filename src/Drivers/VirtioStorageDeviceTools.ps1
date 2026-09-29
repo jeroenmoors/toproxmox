@@ -212,22 +212,27 @@ function Invoke-VirtioStorageRegistration {
         [ValidateSet('vioscsi', 'viostor')][string]$Service = 'vioscsi'
     )
     $state = Get-VirtioBootState -Service $Service
-    $issues = @(); $plan = $null; $alreadyRegistered = $false
-    if ($state.Exists) {
-        if ($state.DriverFilePresent -and -not $state.DriverIssue) {
-            $alreadyRegistered = $true
-        } else {
-            $issues += "A $Service service already exists but its registered driver binary is missing or unexpected. Repair or remove it manually; ToProxmox will not create a duplicate device."
-        }
+    $issues = @(); $plan = $null; $alreadyRegistered = $false; $repair = $false
+    if ($state.Exists -and $state.DriverFilePresent -and -not $state.DriverIssue) {
+        $alreadyRegistered = $true
     } else {
+        # A fresh registration, or a repair of an existing but incomplete service
+        # (on VMware the wizard stages the package but never copies the binary or
+        # completes the service, because the VirtIO controller is absent).
+        $repair = [bool]$state.Exists
         $plan = Find-VirtioStorageInf -Service $Service
         if ($null -eq $plan) {
-            $issues += "No staged $Service driver package was found. Install the VirtIO drivers first, then register the storage device."
+            if ($repair) {
+                $issues += "A $Service service exists but its registered driver binary is missing or unexpected, and no staged $Service driver package was found to repair it. Reinstall the VirtIO drivers, then register the storage device."
+            } else {
+                $issues += "No staged $Service driver package was found. Install the VirtIO drivers first, then register the storage device."
+            }
         }
     }
     $canRegister = ($issues.Count -eq 0 -and $null -ne $plan)
     if ($null -ne $plan) {
-        Write-Host "Storage service: $Service; driver package: $($plan.InfPath); hardware IDs: $($plan.HardwareIds -join ', ')"
+        $intent = if ($repair) { 'repairing the incomplete service' } else { 'creating a new device' }
+        Write-Host "Storage service: $Service ($intent); driver package: $($plan.InfPath); hardware IDs: $($plan.HardwareIds -join ', ')"
     } else {
         Write-Host "Storage service: $Service; already registered: $alreadyRegistered"
     }
@@ -235,25 +240,27 @@ function Invoke-VirtioStorageRegistration {
 
     $message = if ($issues.Count -gt 0) { 'Storage registration blocked: ' + ($issues -join ' ') }
         elseif ($alreadyRegistered) { "$Service is already registered as a storage service. No device was created. You can continue with boot preparation." }
+        elseif ($repair) { "$Service service exists but its driver binary is missing or unexpected; ToProxmox can repair it by force-installing the staged package from $($plan.InfPath). No changes made yet." }
         else { "$Service driver package found and ready to register from $($plan.InfPath). No device created yet." }
 
     $applied = $false; $rebootRequired = $false
     if ($Mode -eq 'Register' -and $issues.Count -gt 0) { throw $message }
     if ($Mode -eq 'Register' -and $canRegister -and
-        $PSCmdlet.ShouldProcess($Service, 'Create a root-enumerated storage device and force-install the VirtIO driver')) {
-        # Re-check just before mutating; a concurrent install may have registered it.
+        $PSCmdlet.ShouldProcess($Service, 'Force-install the staged VirtIO driver to create or complete the storage service')) {
+        # Re-check just before mutating; a concurrent install may have completed it.
         $fresh = Get-VirtioBootState -Service $Service
-        if ($fresh.Exists) {
+        if ($fresh.Exists -and $fresh.DriverFilePresent -and -not $fresh.DriverIssue) {
             $message = "$Service is already registered as a storage service. No device was created."
         } else {
             $result = Install-VirtioStorageDevice -InfPath $plan.InfPath -HardwareId $plan.HardwareIds
             $rebootRequired = [bool]$result.RebootRequired
             $verified = Get-VirtioBootState -Service $Service
-            if (-not $verified.Exists) {
-                throw "Registration ran but the $Service service was not created. Review Device Manager and the VirtIO driver installation."
+            if (-not ($verified.Exists -and $verified.DriverFilePresent -and -not $verified.DriverIssue)) {
+                throw "Registration ran but the $Service driver is still incomplete: the service or its binary is missing. Review Device Manager and the VirtIO driver installation."
             }
             $applied = $true
-            $message = "$Service storage device registered and the service was created. Continue with boot preparation, then shut down for migration." +
+            $verb = if ($repair) { 'completed' } else { 'registered' }
+            $message = "$Service storage device $verb and the service is ready. Continue with boot preparation, then shut down for migration." +
                 $(if ($rebootRequired) { ' Restart Windows first.' } else { '' })
         }
     }

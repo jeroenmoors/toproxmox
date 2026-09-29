@@ -87,8 +87,12 @@ service. No external tools such as `devcon` are required.
 
 The step is idempotent: if the service already exists with a valid registered
 driver binary, no new device is created. If a service exists but its registered
-binary is missing or unexpected, ToProxmox blocks and asks you to repair or remove
-it manually rather than creating a duplicate device.
+binary is missing or unexpected – the common VMware case, where the wizard staged
+the package but never copied the binary because no VirtIO controller was present –
+ToProxmox repairs it by force-installing the staged package onto the existing
+hardware ID, which copies the binary and completes the service. It only blocks
+when no staged package is available to repair with; reinstall the drivers first in
+that case.
 
 Run it from the command line inside the VM in an elevated session:
 
