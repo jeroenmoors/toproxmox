@@ -55,8 +55,9 @@ SCOPE AND LIMITATIONS
 - A DHCP adapter remains on DHCP; receiving the same lease is not guaranteed.
 - Old NIC removal uses only the exact saved PnP device ID and requires the device
   to be physically absent. Drivers are not removed.
-- Removal requires pnputil /remove-device (Server 2022/2025, Windows 10 2004+
-  and Windows 11). Older versions stop before any changes are made.
+- Removal uses pnputil /remove-device where available (Server 2022/2025, Windows
+  10 2004+ and Windows 11) and falls back to a SetupAPI removal of that exact
+  devnode on older versions such as Server 2016/2019.
 - Older exports without PnpInstanceId work without the removal option. Do not
   replace the original export with a new export made after migration.
 - Do not run the source and target VMs on the production network simultaneously.

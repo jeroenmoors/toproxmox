@@ -19,11 +19,12 @@ and manual IPv6 addresses cause restore to stop for separate review.
 An exported DHCP lease is information only: the DHCP server assigns the new IP.
 Optional -RemoveOldAdapter removes ONLY the source PnP instance recorded by a
 fresh export from this version, and only when it is absent (not merely disabled
-or disconnected). Requires PnPUtil /remove-device (Windows Server 2022/2025,
-Windows 10 2004+ or Windows 11). Older systems must remove the verified absent
-NIC in Device Manager. Driver packages are not removed. A required reboot stops
-restore: reboot and rerun. Export files without PnpInstanceId still work without
-this switch; never overwrite the original export from inside the migrated VM.
+or disconnected). It uses PnPUtil /remove-device where available (Windows Server
+2022/2025, Windows 10 2004+ or Windows 11) and falls back to a SetupAPI
+(DIF_REMOVE) removal of that exact devnode on older systems such as Windows Server
+2016/2019. Driver packages are not removed. A required reboot stops restore:
+reboot and rerun. Export files without PnpInstanceId still work without this
+switch; never overwrite the original export from inside the migrated VM.
 Never run the source and migrated VM simultaneously on the production network.
 
 .EXAMPLE
@@ -47,6 +48,105 @@ param(
     [switch]$RemoveOldAdapter
 )
 $ErrorActionPreference = 'Stop'
+
+# SetupAPI fallback so -RemoveOldAdapter also works where pnputil lacks
+# /remove-device (Windows Server 2016/2019). Compiled only when a removal runs.
+$script:PnpRemoverSource = @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+
+public static class ToProxmoxPnpRemover
+{
+    private const uint DIF_REMOVE = 0x00000005;
+    private const uint DI_NEEDREBOOT = 0x00000100;
+    private const uint DI_NEEDRESTART = 0x00000080;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SP_DEVINFO_DATA
+    {
+        public uint cbSize;
+        public Guid ClassGuid;
+        public uint DevInst;
+        public IntPtr Reserved;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct SP_DEVINSTALL_PARAMS
+    {
+        public uint cbSize;
+        public uint Flags;
+        public uint FlagsEx;
+        public IntPtr hwndParent;
+        public IntPtr InstallMsgHandler;
+        public IntPtr InstallMsgHandlerContext;
+        public IntPtr FileQueue;
+        public IntPtr ClassInstallReserved;
+        public uint Reserved;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string DriverPath;
+    }
+
+    [DllImport("setupapi.dll", SetLastError = true)]
+    private static extern IntPtr SetupDiCreateDeviceInfoList(IntPtr ClassGuid, IntPtr hwndParent);
+
+    [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool SetupDiOpenDeviceInfo(IntPtr DeviceInfoSet, string DeviceInstanceId, IntPtr hwndParent, uint Flags, ref SP_DEVINFO_DATA DeviceInfoData);
+
+    [DllImport("setupapi.dll", SetLastError = true)]
+    private static extern bool SetupDiCallClassInstaller(uint InstallFunction, IntPtr DeviceInfoSet, ref SP_DEVINFO_DATA DeviceInfoData);
+
+    [DllImport("setupapi.dll", SetLastError = true)]
+    private static extern bool SetupDiGetDeviceInstallParams(IntPtr DeviceInfoSet, ref SP_DEVINFO_DATA DeviceInfoData, ref SP_DEVINSTALL_PARAMS DeviceInstallParams);
+
+    [DllImport("setupapi.dll", SetLastError = true)]
+    private static extern bool SetupDiDestroyDeviceInfoList(IntPtr DeviceInfoSet);
+
+    // Removes exactly the one non-present devnode named by instanceId; returns
+    // true when Windows requests a reboot to finish. Throws on any failure.
+    public static bool Remove(string instanceId)
+    {
+        IntPtr set = SetupDiCreateDeviceInfoList(IntPtr.Zero, IntPtr.Zero);
+        if (set == new IntPtr(-1)) { throw new Win32Exception(Marshal.GetLastWin32Error()); }
+        try
+        {
+            SP_DEVINFO_DATA data = new SP_DEVINFO_DATA();
+            data.cbSize = (uint)Marshal.SizeOf(typeof(SP_DEVINFO_DATA));
+            if (!SetupDiOpenDeviceInfo(set, instanceId, IntPtr.Zero, 0, ref data))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "The device was not found: " + instanceId);
+            }
+            if (!SetupDiCallClassInstaller(DIF_REMOVE, set, ref data))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "The device could not be removed.");
+            }
+            SP_DEVINSTALL_PARAMS installParams = new SP_DEVINSTALL_PARAMS();
+            installParams.cbSize = (uint)Marshal.SizeOf(typeof(SP_DEVINSTALL_PARAMS));
+            bool reboot = false;
+            if (SetupDiGetDeviceInstallParams(set, ref data, ref installParams))
+            {
+                reboot = (installParams.Flags & (DI_NEEDREBOOT | DI_NEEDRESTART)) != 0;
+            }
+            return reboot;
+        }
+        finally
+        {
+            SetupDiDestroyDeviceInfoList(set);
+        }
+    }
+}
+'@
+
+function Remove-AbsentPnpDevice {
+    param([Parameter(Mandatory = $true)][string]$InstanceId)
+    if ([string]::IsNullOrWhiteSpace($InstanceId) -or $InstanceId -match '[*?]') {
+        throw 'Invalid device instance identifier for removal.'
+    }
+    if (-not ([Management.Automation.PSTypeName]'ToProxmoxPnpRemover').Type) {
+        Add-Type -TypeDefinition $script:PnpRemoverSource -ErrorAction Stop
+    }
+    return [bool][ToProxmoxPnpRemover]::Remove($InstanceId)
+}
 
 function Read-AdapterSettings($Adapter) {
     $idx = $Adapter.ifIndex
@@ -162,6 +262,7 @@ if ($src.DnsMode -eq 'Static' -and @($src.DnsServers).Count -eq 0) { throw 'Stat
 $oldDevice = $null
 $oldIndexes = @()
 $pnpUtil = $null
+$useSetupApiRemoval = $false
 if ($RemoveOldAdapter) {
     if ([string]::IsNullOrWhiteSpace([string]$src.PnpInstanceId)) {
         throw 'Export lacks PnpInstanceId. Before migration, export again with this version to a NEW -Path. If already migrated, remove the verified absent adapter manually; do not replace the original export.'
@@ -185,7 +286,8 @@ if ($RemoveOldAdapter) {
         }
         $helpText = (& $pnpUtil /? | Out-String)
         if ($helpText -notmatch '/remove-device') {
-            throw 'This Windows version lacks pnputil /remove-device. Remove only the verified absent NIC manually in Device Manager, then restore without -RemoveOldAdapter.'
+            $useSetupApiRemoval = $true
+            Write-Host 'pnputil /remove-device is unavailable on this Windows version; using the SetupAPI removal fallback.'
         }
         Write-Host "Verified absent source adapter: $($oldDevice.FriendlyName)"
         Write-Host "Exact PnP instance to remove: $($src.PnpInstanceId)"
@@ -215,12 +317,19 @@ try {
     if ($null -ne $oldDevice) {
         # Recheck presence immediately before the one exact native removal call.
         Assert-SourceDeviceAbsent $src.PnpInstanceId
-        & $pnpUtil /remove-device ([string]$src.PnpInstanceId) | Out-Host
-        $removeExitCode = $LASTEXITCODE
-        if ($removeExitCode -eq 3010) {
-            throw 'Device removal requires a reboot. Reboot from the console, then rerun restore. Target IP settings have not yet been changed.'
+        if ($useSetupApiRemoval) {
+            $rebootNeeded = Remove-AbsentPnpDevice -InstanceId ([string]$src.PnpInstanceId)
+            if ($rebootNeeded) {
+                throw 'Device removal requires a reboot. Reboot from the console, then rerun restore. Target IP settings have not yet been changed.'
+            }
+        } else {
+            & $pnpUtil /remove-device ([string]$src.PnpInstanceId) | Out-Host
+            $removeExitCode = $LASTEXITCODE
+            if ($removeExitCode -eq 3010) {
+                throw 'Device removal requires a reboot. Reboot from the console, then rerun restore. Target IP settings have not yet been changed.'
+            }
+            if ($removeExitCode -ne 0) { throw "Device removal failed (exit $removeExitCode). Target IP settings have not yet been changed." }
         }
-        if ($removeExitCode -ne 0) { throw "Device removal failed (exit $removeExitCode). Target IP settings have not yet been changed." }
         $remaining = @(Get-PnpDevice -Class Net | Where-Object { $_.InstanceId -eq $src.PnpInstanceId })
         if ($remaining.Count -gt 0) { throw 'Old device is still listed after removal. Reboot and check before retrying; target IP settings have not yet been changed.' }
     }
