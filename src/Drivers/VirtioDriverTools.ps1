@@ -27,9 +27,10 @@ function Invoke-VirtioSetup {
         [Parameter(Mandatory = $true)][string]$InstallerPath,
         [Parameter(Mandatory = $true)][string]$LogPath
     )
-    # Keep the upstream interactive wizard, including its component/license UI.
+    # Run the upstream installer unattended with a visible progress bar (/passive):
+    # the default component set and license are accepted without interaction.
     # /norestart suppresses automatic restarts; the caller reports reboot status.
-    $process = Start-Process -FilePath $InstallerPath -ArgumentList ('/install /norestart /log "{0}"' -f $LogPath) -Wait -PassThru
+    $process = Start-Process -FilePath $InstallerPath -ArgumentList ('/install /passive /norestart /log "{0}"' -f $LogPath) -Wait -PassThru
     switch ($process.ExitCode) {
         0 { return [PSCustomObject]@{ RebootRequired = $false; Message = 'VirtIO setup completed. Verify the installed devices before migration or network restore.' } }
         3010 { return [PSCustomObject]@{ RebootRequired = $true; Message = 'VirtIO setup completed. Restart Windows before migration or network restore.' } }

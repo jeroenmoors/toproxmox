@@ -90,8 +90,8 @@ try {
     function Start-Process {
         param($FilePath, $ArgumentList, [switch]$Wait, [switch]$PassThru)
         if ($FilePath -ne $installer -or -not $Wait -or -not $PassThru -or
-            $ArgumentList -ne ('/install /norestart /log "{0}"' -f $log)) {
-            throw 'Unexpected installer invocation or missing restart suppression.'
+            $ArgumentList -ne ('/install /passive /norestart /log "{0}"' -f $log)) {
+            throw 'Unexpected installer invocation, missing unattended mode or restart suppression.'
         }
         return [PSCustomObject]@{ ExitCode = $script:installerExitCode }
     }

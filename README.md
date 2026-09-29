@@ -77,10 +77,11 @@ label if Git metadata is unavailable. No commit hooks or manual version bumps ar
 
 ## Installing VirtIO drivers
 
-Open **Install drivers**, click **Install VirtIO drivers...**, and complete the
-upstream installation wizard. Export your network settings first and use the VM
-console. The bundle includes drivers and guest agents; automatic restarts are
-suppressed, and the tool reports when Windows needs a restart.
+Open **Install drivers**, click **Install VirtIO drivers...**, and confirm. Setup
+runs unattended with a visible progress window; no input is needed. Export your
+network settings first and use the VM console. The bundle installs the default
+drivers and guest agents; automatic restarts are suppressed, and the tool reports
+when Windows needs a restart.
 
 The driver integration targets x86/x64 Windows 10/11 and Server 2016 or newer.
 Installing drivers alone does not guarantee booting from a new storage controller.

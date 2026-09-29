@@ -221,7 +221,7 @@ $driversLayout.ColumnCount = 1; $driversLayout.RowCount = 5; $driversLayout.Auto
 for ($row = 0; $row -lt 5; $row++) { [void]$driversLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize'))) }
 $driversTab.Controls.Add($driversLayout)
 $driversLayout.Controls.Add((New-Label 'Install VirtIO drivers and guest agents for Proxmox. Export your network settings first. You can open setup before migration or after booting the migrated VM.'), 0, 0)
-$driversLayout.Controls.Add((New-Label 'Use the VM console: driver installation may interrupt networking. Complete the upstream installer window and restart Windows if requested.'), 0, 1)
+$driversLayout.Controls.Add((New-Label 'Use the VM console: driver installation may interrupt networking. Setup runs unattended with a progress window; no input is needed. Restart Windows if requested.'), 0, 1)
 $driversLayout.Controls.Add((New-Label 'After installation and any required restart, open Register storage device if Boot preparation reports the storage service is missing, then check the storage driver before shutting down for migration.'), 0, 2)
 $driverStatusLabel = New-Label ''
 if (Test-Path -LiteralPath $script:Ui.DriverInstaller -PathType Leaf) {
@@ -547,7 +547,7 @@ $prepareBootButton.Add_Click({
 })
 $installDriversButton.Add_Click({
     try {
-        $message = 'Open VirtIO Guest Tools setup? It can install drivers and guest agents, including QEMU Guest Agent and SPICE components. Export your network settings first and use the VM console. Networking may be interrupted. Automatic restarts are suppressed.'
+        $message = 'Install VirtIO Guest Tools unattended? It installs the default drivers and guest agents, including QEMU Guest Agent and SPICE components, and accepts the license automatically. A progress window appears; no input is needed. Export your network settings first and use the VM console. Networking may be interrupted. Automatic restarts are suppressed.'
         if ([System.Windows.Forms.MessageBox]::Show($form, $message, 'Install VirtIO drivers', 'YesNo', 'Warning', 'Button2') -ne 'Yes') { return }
         Start-Operation -Kind 'Drivers' -Parameters @{
             InstallerPath = $script:Ui.DriverInstaller; ManifestPath = $script:Ui.DriverManifest

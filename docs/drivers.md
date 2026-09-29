@@ -4,9 +4,10 @@ ToProxmox can open the upstream VirtIO Guest Tools installer from its **Install 
 the VM does not need a network connection to download it.
 
 The bundle includes VirtIO drivers and guest agents, including QEMU Guest Agent
-and SPICE components. Its interactive wizard handles component selection and
-license acceptance. ToProxmox passes `/install /norestart /log` and waits for the
-wizard to finish. Opening ToProxmox alone never installs drivers.
+and SPICE components. ToProxmox runs the installer unattended with a visible
+progress window, passing `/install /passive /norestart /log`: the default
+component set is installed and the license is accepted without interaction, and
+automatic restarts are suppressed. Opening ToProxmox alone never installs drivers.
 
 The current integration targets x86/x64 Windows 10/11 and Windows Server 2016 or
 newer, with Desktop Experience. Actual component availability depends on the
@@ -49,7 +50,8 @@ make driver setup available during development.
 
 1. Export the original network settings and keep a copy outside the VM.
 2. Open the VM console and select **Install drivers**.
-3. Click **Install VirtIO drivers...**, confirm, and complete the upstream wizard.
+3. Click **Install VirtIO drivers...** and confirm. Setup runs unattended with a
+   progress window; no input is needed.
 4. Restart Windows if setup requests it. ToProxmox reports the reboot requirement
    and blocks network restore, boot preparation writes, and another installation
    for the current session.

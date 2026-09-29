@@ -10,6 +10,7 @@ param(
     [Parameter(Mandatory = $true)][string]$LogPath,
     [string]$ManifestPath = (Join-Path $PSScriptRoot 'virtio-win.json')
 )
+# Runs the installer unattended (/passive): default components and license accepted.
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'VirtioDriverTools.ps1')
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'VirtIO driver installation requires Windows.' }
@@ -24,8 +25,8 @@ $manifest = Read-VirtioManifest -Path $ManifestPath
 $InstallerPath = (Resolve-Path -LiteralPath $InstallerPath).ProviderPath
 Assert-VirtioInstaller -Path $InstallerPath -Manifest $manifest
 $LogPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($LogPath)
-if ($PSCmdlet.ShouldProcess("VirtIO Guest Tools $($manifest.Version)", 'Open installer for drivers and guest agents')) {
+if ($PSCmdlet.ShouldProcess("VirtIO Guest Tools $($manifest.Version)", 'Install drivers and guest agents unattended')) {
     [void][IO.Directory]::CreateDirectory((Split-Path -Parent $LogPath))
-    Write-Host "Starting VirtIO Guest Tools $($manifest.Version). Complete the installer window. Log: $LogPath"
+    Write-Host "Installing VirtIO Guest Tools $($manifest.Version) unattended. A progress window appears; no input is needed. Log: $LogPath"
     Invoke-VirtioSetup -InstallerPath $InstallerPath -LogPath $LogPath
 }
