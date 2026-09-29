@@ -25,12 +25,16 @@ function Assert-VirtioInstaller {
 function Invoke-VirtioSetup {
     param(
         [Parameter(Mandatory = $true)][string]$InstallerPath,
-        [Parameter(Mandatory = $true)][string]$LogPath
+        [Parameter(Mandatory = $true)][string]$LogPath,
+        [switch]$Unattended
     )
-    # Run the upstream installer unattended with a visible progress bar (/passive):
-    # the default component set and license are accepted without interaction.
-    # /norestart suppresses automatic restarts; the caller reports reboot status.
-    $process = Start-Process -FilePath $InstallerPath -ArgumentList ('/install /passive /norestart /log "{0}"' -f $LogPath) -Wait -PassThru
+    # Interactive by default: the full upstream wizard handles component/license UI.
+    # Unattended uses /passive: a visible progress bar with the default components
+    # and license accepted without input. /norestart suppresses automatic restarts;
+    # the caller reports reboot status.
+    $mode = if ($Unattended) { '/passive ' } else { '' }
+    $arguments = '/install {0}/norestart /log "{1}"' -f $mode, $LogPath
+    $process = Start-Process -FilePath $InstallerPath -ArgumentList $arguments -Wait -PassThru
     switch ($process.ExitCode) {
         0 { return [PSCustomObject]@{ RebootRequired = $false; Message = 'VirtIO setup completed. Verify the installed devices before migration or network restore.' } }
         3010 { return [PSCustomObject]@{ RebootRequired = $true; Message = 'VirtIO setup completed. Restart Windows before migration or network restore.' } }

@@ -177,7 +177,7 @@ $controllerPanel.Controls.AddRange(@($controllerLabel, $controllerCombo))
 $preLayout.Controls.Add($controllerPanel, 0, 1); $preLayout.SetColumnSpan($controllerPanel, 2)
 
 $cbInstall = New-Object System.Windows.Forms.CheckBox
-$cbInstall.Text = 'Install VirtIO drivers (unattended)'; $cbInstall.AutoSize = $true; $cbInstall.Checked = $true; $cbInstall.Dock = 'Fill'
+$cbInstall.Text = 'Install VirtIO drivers'; $cbInstall.AutoSize = $true; $cbInstall.Checked = $true; $cbInstall.Dock = 'Fill'
 $cbInstall.Margin = New-Object System.Windows.Forms.Padding(4, 10, 4, 8)
 $installDriversButton = New-Button 'Install now' 150
 $preLayout.Controls.Add($cbInstall, 0, 2); $preLayout.Controls.Add($installDriversButton, 1, 2)
@@ -386,7 +386,7 @@ function Invoke-NextQueued {
 function Start-HostPreparation {
     $queue = New-Object System.Collections.Generic.Queue[object]
     $service = $controllerCombo.SelectedItem.Service
-    if ($cbInstall.Checked) { $queue.Enqueue(@{ Kind = 'Drivers'; Parameters = @{ InstallerPath = $script:Ui.DriverInstaller; ManifestPath = $script:Ui.DriverManifest } }) }
+    if ($cbInstall.Checked) { $queue.Enqueue(@{ Kind = 'Drivers'; Parameters = @{ InstallerPath = $script:Ui.DriverInstaller; ManifestPath = $script:Ui.DriverManifest; Unattended = $true } }) }
     if ($cbRegister.Checked) { $queue.Enqueue(@{ Kind = 'Storage register'; Parameters = @{ Mode = 'Register'; Service = $service } }) }
     if ($cbBoot.Checked) { $queue.Enqueue(@{ Kind = 'Boot prepare'; Parameters = @{ Mode = 'Prepare'; Service = $service } }) }
     if ($cbSave.Checked) { $queue.Enqueue(@{ Kind = 'Export'; Parameters = @{ Mode = 'Export'; Path = (Get-DesktopExportPath) } }) }
@@ -567,7 +567,7 @@ $prepareBootButton.Add_Click({
 })
 $installDriversButton.Add_Click({
     try {
-        $message = 'Install VirtIO Guest Tools unattended? It installs the default drivers and guest agents, including QEMU Guest Agent and SPICE components, and accepts the license automatically. A progress window appears; no input is needed. Save your network settings first and use the VM console. Networking may be interrupted. Automatic restarts are suppressed.'
+        $message = 'Open the VirtIO Guest Tools installer? The upstream wizard opens so you can choose components and accept the license. Save your network settings first and use the VM console. Networking may be interrupted. Automatic restarts are suppressed.'
         if ([System.Windows.Forms.MessageBox]::Show($form, $message, 'Install VirtIO drivers', 'YesNo', 'Warning', 'Button2') -ne 'Yes') { return }
         Start-Operation -Kind 'Drivers' -Parameters @{
             InstallerPath = $script:Ui.DriverInstaller; ManifestPath = $script:Ui.DriverManifest
@@ -583,7 +583,7 @@ $saveConfigButton.Add_Click({
 $prepareHostButton.Add_Click({
     try {
         $tasks = @()
-        if ($cbInstall.Checked) { $tasks += 'install VirtIO drivers' }
+        if ($cbInstall.Checked) { $tasks += 'install VirtIO drivers (unattended)' }
         if ($cbRegister.Checked) { $tasks += 'register the storage driver' }
         if ($cbBoot.Checked) { $tasks += 'prepare boot settings' }
         if ($cbSave.Checked) { $tasks += 'save the network configuration to the Desktop' }

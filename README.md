@@ -79,9 +79,10 @@ label if Git metadata is unavailable. No commit hooks or manual version bumps ar
 
 Open the **Pre migration** tab. It lists four tasks, all selected by default:
 
-- **Install VirtIO drivers** – runs the bundled Guest Tools installer unattended
-  (progress window, no input); the default drivers and guest agents are installed
-  and automatic restarts are suppressed.
+- **Install VirtIO drivers** – installs the bundled Guest Tools. **Prepare host**
+  runs this unattended (progress window, no input, default components); the
+  per-task **Install now** button opens the upstream interactive wizard instead.
+  Automatic restarts are suppressed.
 - **Register storage driver** – on VMware the installer only stages the storage
   driver without creating its service; this creates a root-enumerated device so the
   `vioscsi`/`viostor` service exists.

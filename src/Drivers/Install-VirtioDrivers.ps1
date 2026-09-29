@@ -8,9 +8,11 @@ Opens the bundled VirtIO Guest Tools installer without automatic reboot.
 param(
     [Parameter(Mandatory = $true)][string]$InstallerPath,
     [Parameter(Mandatory = $true)][string]$LogPath,
-    [string]$ManifestPath = (Join-Path $PSScriptRoot 'virtio-win.json')
+    [string]$ManifestPath = (Join-Path $PSScriptRoot 'virtio-win.json'),
+    [switch]$Unattended
 )
-# Runs the installer unattended (/passive): default components and license accepted.
+# Interactive by default; -Unattended runs the installer with /passive (default
+# components and license accepted, progress window, no input).
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'VirtioDriverTools.ps1')
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'VirtIO driver installation requires Windows.' }
@@ -25,8 +27,13 @@ $manifest = Read-VirtioManifest -Path $ManifestPath
 $InstallerPath = (Resolve-Path -LiteralPath $InstallerPath).ProviderPath
 Assert-VirtioInstaller -Path $InstallerPath -Manifest $manifest
 $LogPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($LogPath)
-if ($PSCmdlet.ShouldProcess("VirtIO Guest Tools $($manifest.Version)", 'Install drivers and guest agents unattended')) {
+$action = if ($Unattended) { 'Install drivers and guest agents unattended' } else { 'Open the installer for drivers and guest agents' }
+if ($PSCmdlet.ShouldProcess("VirtIO Guest Tools $($manifest.Version)", $action)) {
     [void][IO.Directory]::CreateDirectory((Split-Path -Parent $LogPath))
-    Write-Host "Installing VirtIO Guest Tools $($manifest.Version) unattended. A progress window appears; no input is needed. Log: $LogPath"
-    Invoke-VirtioSetup -InstallerPath $InstallerPath -LogPath $LogPath
+    if ($Unattended) {
+        Write-Host "Installing VirtIO Guest Tools $($manifest.Version) unattended. A progress window appears; no input is needed. Log: $LogPath"
+    } else {
+        Write-Host "Opening VirtIO Guest Tools $($manifest.Version). Complete the installer window. Log: $LogPath"
+    }
+    Invoke-VirtioSetup -InstallerPath $InstallerPath -LogPath $LogPath -Unattended:$Unattended
 }

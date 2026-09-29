@@ -89,23 +89,27 @@ try {
 
     function Start-Process {
         param($FilePath, $ArgumentList, [switch]$Wait, [switch]$PassThru)
-        if ($FilePath -ne $installer -or -not $Wait -or -not $PassThru -or
-            $ArgumentList -ne ('/install /passive /norestart /log "{0}"' -f $log)) {
-            throw 'Unexpected installer invocation, missing unattended mode or restart suppression.'
+        if ($FilePath -ne $installer -or -not $Wait -or -not $PassThru -or $ArgumentList -ne $script:expectedArgs) {
+            throw 'Unexpected installer invocation or arguments.'
         }
         return [PSCustomObject]@{ ExitCode = $script:installerExitCode }
     }
     $log = Join-Path $temp 'log with spaces.log'
     $script:installerExitCode = 0
+    # Interactive by default (Install now): the full wizard, no /passive.
+    $script:expectedArgs = '/install /norestart /log "{0}"' -f $log
     if ((Invoke-VirtioSetup $installer $log).RebootRequired) { throw 'Successful setup incorrectly requests a reboot.' }
+    # Unattended (auto prepare): /passive with restart suppression.
+    $script:expectedArgs = '/install /passive /norestart /log "{0}"' -f $log
+    if ((Invoke-VirtioSetup $installer $log -Unattended).RebootRequired) { throw 'Successful unattended setup incorrectly requests a reboot.' }
     foreach ($code in @(3010, 1641)) {
         $script:installerExitCode = $code
-        if (-not (Invoke-VirtioSetup $installer $log).RebootRequired) { throw 'Setup reboot status was lost.' }
+        if (-not (Invoke-VirtioSetup $installer $log -Unattended).RebootRequired) { throw 'Setup reboot status was lost.' }
     }
     $script:installerExitCode = 1602
-    Assert-Failure { Invoke-VirtioSetup $installer $log } '*cancelled*'
+    Assert-Failure { Invoke-VirtioSetup $installer $log -Unattended } '*cancelled*'
     $script:installerExitCode = 1603
-    Assert-Failure { Invoke-VirtioSetup $installer $log } '*exit code 1603*'
+    Assert-Failure { Invoke-VirtioSetup $installer $log -Unattended } '*exit code 1603*'
 
     # The worker is itself a script stored inside a here-string in the UI.
     $uiAst = [Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'src/Network/Network-Migration-UI.ps1'), [ref]$tokens, [ref]$parseErrors)
