@@ -144,6 +144,9 @@ and saves the package as a build artifact. Windows process tests are skipped on 
 3. Explicitly select the old and new adapters and perform a dry run.
 4. Confirm the restore and verify network connectivity and applications, including
    after a reboot.
+5. Remove **VMware Tools** with the button on the same tab: it crashes on
+   Proxmox/KVM (for example `0xc0000096`). The tool detects VMware Tools and
+   uninstalls it silently through its MSI; reboot afterwards.
 
 The current backend supports ordinary IPv4 adapters. Additional static routes and
 manual IPv6 settings block restoration. NIC teaming and VLAN driver settings are

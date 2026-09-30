@@ -14,6 +14,8 @@ if ($SkipDrivers -and $DriverInstallerPath) { throw 'SkipDrivers and DriverInsta
 $files = [ordered]@{
     'Migrate-Network.ps1' = (Join-Path $root 'src/Network/Migrate-Network.ps1')
     'Network-Migration-UI.ps1' = (Join-Path $root 'src/Network/Network-Migration-UI.ps1')
+    'Remove-VmwareTools.ps1' = (Join-Path $root 'src/Network/Remove-VmwareTools.ps1')
+    'VmwareToolsTools.ps1' = (Join-Path $root 'src/Network/VmwareToolsTools.ps1')
     'Install-VirtioDrivers.ps1' = (Join-Path $root 'src/Drivers/Install-VirtioDrivers.ps1')
     'VirtioDriverTools.ps1' = (Join-Path $root 'src/Drivers/VirtioDriverTools.ps1')
     'Prepare-VirtioBoot.ps1' = (Join-Path $root 'src/Drivers/Prepare-VirtioBoot.ps1')

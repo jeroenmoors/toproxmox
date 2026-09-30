@@ -37,7 +37,8 @@ try {
         $payload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($embeddedPayload)) | ConvertFrom-Json
         $runtimeDirectory = Join-Path ([IO.Path]::GetTempPath()) ('ToProxmox-' + [guid]::NewGuid().ToString('N'))
         [void][IO.Directory]::CreateDirectory($runtimeDirectory)
-        $allowedNames = @('Migrate-Network.ps1', 'Network-Migration-UI.ps1', 'Install-VirtioDrivers.ps1',
+        $allowedNames = @('Migrate-Network.ps1', 'Network-Migration-UI.ps1', 'Remove-VmwareTools.ps1',
+            'VmwareToolsTools.ps1', 'Install-VirtioDrivers.ps1',
             'VirtioDriverTools.ps1', 'Prepare-VirtioBoot.ps1', 'VirtioBootTools.ps1', 'Register-VirtioStorage.ps1',
             'VirtioStorageDeviceTools.ps1', 'virtio-win.json', 'THIRD-PARTY.md', 'version.json')
         foreach ($property in $payload.PSObject.Properties) {

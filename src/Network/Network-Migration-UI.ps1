@@ -35,6 +35,10 @@ if (-not (Test-Path -LiteralPath $enginePath -PathType Leaf)) {
     [System.Windows.Forms.MessageBox]::Show('Migrate-Network.ps1 is missing. Build or download ToProxmox again.', 'Network migration') | Out-Null
     exit 1
 }
+# VMware Tools detection shares its logic with the removal engine (a sibling file).
+$vmwareEnginePath = Join-Path $PSScriptRoot 'Remove-VmwareTools.ps1'
+$vmwareToolsLib = Join-Path $PSScriptRoot 'VmwareToolsTools.ps1'
+if (Test-Path -LiteralPath $vmwareToolsLib -PathType Leaf) { . $vmwareToolsLib }
 
 # Packaged files are siblings; source checkouts keep drivers in src/Drivers.
 $driverRoot = $PSScriptRoot
@@ -68,6 +72,7 @@ $script:Ui = @{
     RebootRequired = $false; Batch = $false; Queue = $null; Exiting = $false
     BootEngine = (Join-Path $driverRoot 'Prepare-VirtioBoot.ps1')
     StorageEngine = (Join-Path $driverRoot 'Register-VirtioStorage.ps1')
+    VmwareEngine = $vmwareEnginePath; VmwareInstalled = $false
 }
 
 function New-Label([string]$Text) {
@@ -113,6 +118,7 @@ function Update-Buttons {
     # Post-migration: restore controls.
     $previewButton.Enabled = -not $busy -and $null -ne $sourceCombo.SelectedItem -and $null -ne $targetCombo.SelectedItem
     $restoreButton.Enabled = $previewButton.Enabled -and -not [string]::IsNullOrWhiteSpace($script:Ui.PreviewKey)
+    $removeVmwareButton.Enabled = -not $busy -and $script:Ui.VmwareInstalled
 }
 
 $form = New-Object System.Windows.Forms.Form
@@ -216,12 +222,14 @@ $preLayout.Controls.Add($driverStatusLabel, 0, 7); $preLayout.SetColumnSpan($dri
 # --- Post migration tab ------------------------------------------------------
 $restoreLayout = New-Object System.Windows.Forms.TableLayoutPanel
 $restoreLayout.Dock = 'Fill'; $restoreLayout.Padding = New-Object System.Windows.Forms.Padding(10)
-$restoreLayout.ColumnCount = 3; $restoreLayout.RowCount = 7
+$restoreLayout.ColumnCount = 3; $restoreLayout.RowCount = 9
 [void]$restoreLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Absolute', 145)))
 [void]$restoreLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Percent', 100)))
 [void]$restoreLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle('Absolute', 200)))
-for ($row = 0; $row -lt 4; $row++) { [void]$restoreLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize'))) }
+ for ($row = 0; $row -lt 4; $row++) { [void]$restoreLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize'))) }
 [void]$restoreLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('Percent', 100)))
+[void]$restoreLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
+[void]$restoreLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
 [void]$restoreLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
 [void]$restoreLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle('AutoSize')))
 $postTab.Controls.Add($restoreLayout)
@@ -255,6 +263,14 @@ $restoreButton = New-Button '2. Restore configuration' 240
 $previewButton.Enabled = $false; $restoreButton.Enabled = $false
 $restoreActions.Controls.AddRange(@($refreshButton, $previewButton, $restoreButton))
 $restoreLayout.Controls.Add($restoreActions, 0, 6); $restoreLayout.SetColumnSpan($restoreActions, 3)
+$vmwareStatusLabel = New-Label 'VMware Tools cleanup: after migration, remove VMware Tools; it crashes on Proxmox/KVM. A reboot is recommended afterwards.'
+$restoreLayout.Controls.Add($vmwareStatusLabel, 0, 7); $restoreLayout.SetColumnSpan($vmwareStatusLabel, 3)
+$vmwareActions = New-Object System.Windows.Forms.FlowLayoutPanel
+$vmwareActions.AutoSize = $true; $vmwareActions.AutoSizeMode = 'GrowAndShrink'; $vmwareActions.Dock = 'Fill'
+$removeVmwareButton = New-Button 'Remove VMware Tools...' 220
+$removeVmwareButton.Enabled = $false
+$vmwareActions.Controls.Add($removeVmwareButton)
+$restoreLayout.Controls.Add($vmwareActions, 0, 8); $restoreLayout.SetColumnSpan($vmwareActions, 3)
 
 # Current adapters are summarised through the target combo; keep this control
 # for Refresh-Adapters output without occupying tab space.
@@ -376,6 +392,22 @@ function Find-DesktopExport {
     } catch { }
     return $false
 }
+function Update-VmwareStatus {
+    try {
+        $state = Get-VmwareToolsState
+        if ($state.Installed) {
+            $script:Ui.VmwareInstalled = $true
+            $vmwareStatusLabel.Text = "VMware Tools $($state.DisplayVersion) detected. Remove it after migration; it crashes on Proxmox/KVM. Reboot afterwards."
+        } else {
+            $script:Ui.VmwareInstalled = $false
+            $vmwareStatusLabel.Text = 'VMware Tools not detected. Nothing to remove.'
+        }
+    } catch {
+        $script:Ui.VmwareInstalled = $false
+        $vmwareStatusLabel.Text = 'VMware Tools status unavailable: ' + $_.Exception.Message
+    }
+    Update-Buttons
+}
 function Invoke-NextQueued {
     if ($null -eq $script:Ui.Queue -or $script:Ui.Queue.Count -eq 0) {
         $script:Ui.Batch = $false; $script:Ui.Queue = $null; return
@@ -403,10 +435,12 @@ function Start-Operation([string]$Kind, [hashtable]$Parameters, [string]$Selecti
     $resultPath = Join-Path $opDir 'result.json'
     if ($Kind -eq 'Boot prepare') { $Parameters['BackupDirectory'] = $opDir }
     if ($Kind -eq 'Drivers') { $Parameters['LogPath'] = Join-Path $opDir 'virtio-setup.log' }
+    if ($Kind -eq 'Vmware remove') { $Parameters['LogPath'] = Join-Path $opDir 'vmware-tools-uninstall.log' }
     $payload = @{
         Engine = $(if ($Kind -eq 'Drivers') { $script:Ui.DriverEngine }
             elseif ($Kind -eq 'Boot prepare') { $script:Ui.BootEngine }
             elseif ($Kind -eq 'Storage register') { $script:Ui.StorageEngine }
+            elseif ($Kind -in @('Vmware check', 'Vmware remove')) { $script:Ui.VmwareEngine }
             else { $script:Ui.Engine })
         Kind = $Kind; Parameters = $Parameters; Transcript = $transcriptPath
         Result = $resultPath; ExportHash = $(if ($Kind -in @('Dry run', 'Restore')) { $script:Ui.ExportHash } else { '' })
@@ -431,7 +465,7 @@ try {
         $target = @(Get-NetAdapter -Physical | Where-Object { $_.Name -eq $parameters.TargetAlias })
         if ($target.Count -ne 1 -or [string]$target[0].InterfaceGuid -ne $payload.TargetGuid) { throw 'Target adapter changed before execution.' }
     }
-    if ($payload.Kind -in @('Drivers', 'Boot prepare', 'Storage register')) {
+    if ($payload.Kind -in @('Drivers', 'Boot prepare', 'Storage register', 'Vmware check', 'Vmware remove')) {
         $installation = & $payload.Engine @parameters
         $result.RebootRequired = [bool]$installation.RebootRequired
         $result.Message = $installation.Message
@@ -515,6 +549,12 @@ $timer.Add_Tick({
         } elseif ($job.Kind -eq 'Dry run') {
             $script:Ui.PreviewKey = $job.Key
             $statusLabel.Text = 'Dry run succeeded. No settings were changed. You can now restore the configuration.'
+        } elseif ($job.Kind -eq 'Vmware remove') {
+            $statusLabel.Text = $result.Message
+            Update-VmwareStatus
+            if ([bool]$result.RebootRequired) {
+                [System.Windows.Forms.MessageBox]::Show($form, $result.Message, 'Restart required', 'OK', 'Information') | Out-Null
+            }
         } elseif ($job.Kind -eq 'Export') {
             Load-Export $job.Parameters.Path
             $driverStatusLabel.Text = 'Network configuration saved to: ' + $job.Parameters.Path
@@ -594,6 +634,13 @@ $prepareHostButton.Add_Click({
     } catch { Show-UiError $_.Exception.Message; Update-Buttons }
 })
 $refreshButton.Add_Click({ try { Refresh-Adapters } catch { Show-UiError $_.Exception.Message } })
+$removeVmwareButton.Add_Click({
+    try {
+        $message = 'Remove VMware Tools now? It is uninstalled silently (msiexec /qn /norestart). VMware Tools crashes on Proxmox/KVM, so removing it cleans up after migration. A reboot may be required. Continue?'
+        if ([System.Windows.Forms.MessageBox]::Show($form, $message, 'Remove VMware Tools', 'YesNo', 'Warning', 'Button2') -ne 'Yes') { return }
+        Start-Operation -Kind 'Vmware remove' -Parameters @{ Mode = 'Remove' }
+    } catch { Show-UiError $_.Exception.Message; Update-Buttons }
+})
 $openButton.Add_Click({
     $dialog = New-Object System.Windows.Forms.OpenFileDialog
     try {
@@ -649,6 +696,7 @@ $form.Add_FormClosing({
 $form.Add_Shown({
     try {
         Refresh-Adapters
+        Update-VmwareStatus
         if (Find-DesktopExport) {
             $statusLabel.Text = 'Loaded network export from the Desktop: ' + $script:Ui.ExportPath
         }

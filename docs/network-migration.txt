@@ -32,6 +32,9 @@ AFTER MIGRATION (THROUGH THE PROXMOX CONSOLE)
 - After a successful dry run, '2. Restore configuration' becomes available.
 - Review the summary and confirm the restore. Repeat for each adapter.
 - Check IP, gateway, DNS, network profile and applications, including after a reboot.
+- Click 'Remove VMware Tools...' to uninstall VMware Tools; it crashes on
+  Proxmox/KVM (for example 0xc0000096). It is removed silently through its MSI;
+  reboot afterwards. If no MSI product code is found, remove it from Settings > Apps.
 
 LOGS AND BACKUP
 The GUI remains responsive during execution. The script runs in a separate
