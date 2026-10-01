@@ -34,7 +34,7 @@ try {
     if ($driverAssignment.Right.Expression.Value) { throw 'SkipDrivers still embedded an installer.' }
     $encoded = $assignment.Right.Expression.Value
     $payload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($encoded)) | ConvertFrom-Json
-    if (@($payload.PSObject.Properties).Count -ne 13) { throw 'Unexpected package contents.' }
+    if (@($payload.PSObject.Properties).Count -ne 14) { throw 'Unexpected package contents.' }
     $embeddedVersion = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($payload.'version.json')) | ConvertFrom-Json
     $expectedVersion = & (Join-Path $root 'scripts/Get-Version.ps1') -RepositoryRoot $root
     if ($embeddedVersion.DisplayVersion -cne $expectedVersion.DisplayVersion -or
@@ -45,6 +45,7 @@ try {
     $expectedFiles = @{
         'Migrate-Network.ps1' = 'src/Network/Migrate-Network.ps1'
         'Network-Migration-UI.ps1' = 'src/Network/Network-Migration-UI.ps1'
+        'Prepare-Host.ps1' = 'src/Network/Prepare-Host.ps1'
         'Remove-VmwareTools.ps1' = 'src/Network/Remove-VmwareTools.ps1'
         'VmwareToolsTools.ps1' = 'src/Network/VmwareToolsTools.ps1'
         'Install-VirtioDrivers.ps1' = 'src/Drivers/Install-VirtioDrivers.ps1'

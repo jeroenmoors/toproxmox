@@ -47,7 +47,7 @@ try {
         $node.Left.VariablePath.UserPath -eq 'embeddedPayload'
     }, $true)
     $payload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($assignment.Right.Expression.Value)) | ConvertFrom-Json
-    if (@($payload.PSObject.Properties).Count -ne 13) { throw 'Driver-enabled package has missing or extra entries.' }
+    if (@($payload.PSObject.Properties).Count -ne 14) { throw 'Driver-enabled package has missing or extra entries.' }
     $driverAssignment = $ast.Find({
         param($node)
         $node -is [Management.Automation.Language.AssignmentStatementAst] -and

@@ -5,7 +5,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $text = [IO.File]::ReadAllText($PackagePath, [Text.Encoding]::UTF8)
 if (-not $text.StartsWith("@echo off`r`n")) { throw 'CMD header must use CRLF and have no BOM.' }
-$match = [regex]::Match($text, '-EncodedCommand ([A-Za-z0-9+/=]+)\r\n')
+$match = [regex]::Match($text, '-EncodedCommand ([A-Za-z0-9+/=]+)(?: %\*)?\r\n')
 if (-not $match.Success) { throw 'Missing encoded CMD bootstrap.' }
 $bootstrap = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($match.Groups[1].Value))
 if ($bootstrap -cne [IO.File]::ReadAllText((Join-Path $root 'src/Launch-Package.ps1'))) { throw 'Embedded bootstrap differs from source.' }

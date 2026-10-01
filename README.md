@@ -104,6 +104,31 @@ for migration steps, offline builds, version pinning, CLI usage, backups, and
 [third-party components](docs/THIRD-PARTY.md). A successful configuration check is
 not a successful boot test.
 
+### Preparing the host from the command line
+
+The whole **Prepare host** step can run headless, without any window, so it can be
+driven from automation such as vCenter `Invoke-VMScript`. Pass `--prepare-host` to
+the same launcher:
+
+```text
+ToProxmox.cmd --prepare-host
+ToProxmox.cmd --prepare-host --controller viostor
+ToProxmox.cmd --prepare-host --config-path C:\Migration
+```
+
+It runs the same tasks in order without prompts: it saves the network
+configuration first, installs the VirtIO drivers unattended, registers the storage
+driver and prepares the boot settings. The boot controller defaults to `vioscsi`;
+use `--controller viostor` for VirtIO Block. The network configuration is written
+to a stable, easy-to-find file (`C:\Migration\<ComputerName>-network.json` by
+default, or under `--config-path`) and an existing export is never overwritten.
+
+Run it elevated; headless mode fails with a clear message instead of showing a UAC
+prompt (for example, run it as SYSTEM through vCenter). Exit code `0` means all
+tasks completed, `3010` means a restart is required (reboot Windows and run it
+again to finish), and `1` means a task failed. Logs are written to
+`%ProgramData%\NetworkMigration\Logs`.
+
 ## Development
 
 ```text
@@ -112,6 +137,7 @@ src/ToProxmox.ps1             PowerShell entry point and package payload
 src/Launch-Package.cmd       Double-click launcher template
 src/Launch-Package.ps1       Embedded extraction bootstrap
 src/Network/                 Network backend and Windows Forms interface
+src/Network/Prepare-Host.ps1 Headless "Prepare host" for CLI/automation
 src/Drivers/                 Driver installation, checks and pinned version
 scripts/Package.ps1           Builds the standalone CMD package
 build.ps1                    Package and test commands

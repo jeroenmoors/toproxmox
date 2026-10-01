@@ -13,7 +13,18 @@ try {
     $scriptPath = Join-Path $directory 'ToProxmox.ps1'
     [IO.File]::WriteAllText($scriptPath, $text.Substring($offset + $marker.Length), (New-Object Text.UTF8Encoding($true)))
     # The existing launcher handles UAC and waits for the UI and its operations.
-    & (Join-Path $PSHOME 'powershell.exe') -NoLogo -NoProfile -STA -ExecutionPolicy Bypass -File $scriptPath
+    # Translate CMD-style flags (e.g. --prepare-host) to native parameters.
+    $forward = @()
+    foreach ($argument in $args) {
+        if ($argument -like '--*') {
+            $name = ($argument.Substring(2) -split '-' | Where-Object { $_ } |
+                ForEach-Object { $_.Substring(0, 1).ToUpperInvariant() + $_.Substring(1) }) -join ''
+            $forward += ('-' + $name)
+        } else {
+            $forward += $argument
+        }
+    }
+    & (Join-Path $PSHOME 'powershell.exe') -NoLogo -NoProfile -STA -ExecutionPolicy Bypass -File $scriptPath @forward
     $code = $LASTEXITCODE
 } catch {
     Write-Host ("ToProxmox could not start: " + $_.Exception.Message) -ForegroundColor Red
